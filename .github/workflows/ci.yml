@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: registry_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run tests with coverage
+      run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      env:
+        REGISTRY_DB_TYPE: postgres
+        REGISTRY_DB_DSN: "host=localhost user=postgres password=postgres dbname=registry_test sslmode=disable"
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+      continue-on-error: true
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+        args: --timeout=5m
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+
+    - name: Build server
+      run: go build -v -o bin/cola-registry-server ./cmd/server
+
+    - name: Build CLI
+      run: go build -v -o bin/cola-registry-cli ./cmd/cli
+
+    - name: Upload server artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cola-registry-server
+        path: bin/cola-registry-server
+        retention-days: 7
+
+    - name: Upload CLI artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cola-registry-cli
+        path: bin/cola-registry-cli
+        retention-days: 7
+
+  integration:
+    name: Integration Test (SQLite + Populate Script)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+
+    - name: Build binaries
+      run: |
+        go build -v -o bin/cola-registry-server ./cmd/server
+        go build -v -o bin/cola-registry-cli ./cmd/cli
+
+    - name: Start server with SQLite
+      run: |
+        ./bin/cola-registry-server --db-type sqlite --db-dsn test.db --port 8080 &
+        sleep 5
+
+    - name: Wait for server to be ready
+      run: |
+        for i in {1..30}; do
+          if curl -s http://localhost:8080/health > /dev/null; then
+            echo "Server is ready"
+            exit 0
+          fi
+          echo "Waiting for server... ($i/30)"
+          sleep 1
+        done
+        echo "Server failed to start"
+        exit 1
+
+    - name: Run populate script
+      run: |
+        chmod +x scripts/populate-registry.sh
+        ./scripts/populate-registry.sh http://localhost:8080
+
+    - name: Verify data was populated
+      run: |
+        # Check registries were created
+        REGISTRIES=$(curl -s http://localhost:8080/remote/registries | jq length)
+        if [ "$REGISTRIES" -lt 3 ]; then
+          echo "Expected at least 3 registries, got $REGISTRIES"
+          exit 1
+        fi
+        echo "✓ Registries created: $REGISTRIES"
+
+        # Check development registry index
+        DEV_VERSIONS=$(curl -s http://localhost:8080/remote/registries/development/index.json | jq length)
+        if [ "$DEV_VERSIONS" -lt 1 ]; then
+          echo "Expected versions in development registry, got $DEV_VERSIONS"
+          exit 1
+        fi
+        echo "✓ Development registry has $DEV_VERSIONS versions"
+
+    - name: Test CLI commands
+      run: |
+        # List registries
+        ./bin/cola-registry-cli --api-url http://localhost:8080 registry list
+
+        # List packages in development registry
+        ./bin/cola-registry-cli --api-url http://localhost:8080 package list development
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: deployments/docker/Dockerfile
+        push: false
+        tags: cola-registry:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cola-registry-postgres
+    environment:
+      POSTGRES_DB: registry
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-registry_secret}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cola-network
+
+  registry:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    container_name: cola-registry-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      REGISTRY_DB_TYPE: postgres
+      REGISTRY_DB_DSN: "host=postgres user=registry password=${POSTGRES_PASSWORD:-registry_secret} dbname=registry sslmode=disable"
+      REGISTRY_PORT: 8080
+      REGISTRY_MODE: ${REGISTRY_MODE:-release}
+      REGISTRY_LOG_LEVEL: ${REGISTRY_LOG_LEVEL:-info}
+      REGISTRY_LOG_FORMAT: ${REGISTRY_LOG_FORMAT:-json}
+      REGISTRY_JWT_SECRET: ${REGISTRY_JWT_SECRET:-change-this-in-production}
+    ports:
+      - "${REGISTRY_PORT:-8080}:8080"
+    networks:
+      - cola-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  cola-network:
+    driver: bridge
