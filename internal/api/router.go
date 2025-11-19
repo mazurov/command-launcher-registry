@@ -1,10 +1,10 @@
 package api
 
 import (
+	"github.com/gin-gonic/gin"
 	"github.com/mazurov/command-launcher-registry/internal/api/handlers"
 	"github.com/mazurov/command-launcher-registry/internal/api/middleware"
 	"github.com/mazurov/command-launcher-registry/internal/service"
-	"github.com/gin-gonic/gin"
 )
 
 // SetupRouter configures all routes and middleware

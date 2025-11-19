@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/mazurov/command-launcher-registry/pkg/types"
 	"github.com/gin-gonic/gin"
+	"github.com/mazurov/command-launcher-registry/pkg/types"
 )
 
 // ErrorHandler handles panics and converts them to error responses

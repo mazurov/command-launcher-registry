@@ -6,12 +6,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/mazurov/command-launcher-registry/internal/api"
 	"github.com/mazurov/command-launcher-registry/internal/api/middleware"
 	"github.com/mazurov/command-launcher-registry/internal/config"
 	"github.com/mazurov/command-launcher-registry/internal/repository"
 	"github.com/mazurov/command-launcher-registry/internal/service"
-	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

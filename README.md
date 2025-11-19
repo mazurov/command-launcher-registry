@@ -2,7 +2,8 @@
 
 [![CI](https://github.com/mazurov/command-launcher-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/mazurov/command-launcher-registry/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mazurov/command-launcher-registry)](https://goreportcard.com/report/github.com/mazurov/command-launcher-registry)
-[![codecov](https://codecov.io/gh/mazurov/command-launcher-registry/branch/main/graph/badge.svg)](https://codecov.io/gh/mazurov/command-launcher-registry)
+
+<!-- [![codecov](https://codecov.io/gh/mazurov/command-launcher-registry/branch/main/graph/badge.svg)](https://codecov.io/gh/mazurov/command-launcher-registry) -->
 
 Modern implementation of the Command Launcher remote registry with Gin web framework and GORM ORM.
 

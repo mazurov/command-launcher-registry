@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mazurov/command-launcher-registry/pkg/types"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mazurov/command-launcher-registry/pkg/types"
 )
 
 // JWTAuth validates JWT tokens

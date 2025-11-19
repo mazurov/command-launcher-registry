@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/mazurov/command-launcher-registry/internal/repository"
 	"github.com/mazurov/command-launcher-registry/internal/service"
 	"github.com/mazurov/command-launcher-registry/pkg/types"
-	"github.com/gin-gonic/gin"
 )
 
 type RegistryHandler struct {
