@@ -9,12 +9,12 @@ Modern implementation of the Command Launcher remote registry with Gin web frame
 
 ## Features
 
-- 🚀 **High-Performance API**: Built with Gin web framework
+- 🚀 **API**: Built with Gin web framework
 - 💾 **Flexible Storage**: GORM with PostgreSQL/SQLite support
 - 🔐 **Secure Authentication**: JWT tokens + API key support
 - 🎯 **Backward Compatible**: Maintains compatibility with existing Command Launcher clients (provides index.json)
-- 🛠️ **Powerful CLI**: Cobra-based management tool
-- 📦 **Clean Architecture**: Layered design with separation of concerns
+- 🛠️ **CLI**: Cobra-based management tool
+- 📦 **Architecture**: Layered design with separation of concerns
 
 ## Quick Start
 
