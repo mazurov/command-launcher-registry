@@ -67,10 +67,10 @@ make build
 
 ## API Endpoints
 
-### Backward Compatible (CDT v1)
+### Backward Compatibility with Command Launcher remote registry index
 - `GET /remote/registry/:name/index.json` - Get registry index in CDT format
 
-### New API (v2)
+### API
 - `POST /remote/registries` - Create registry
 - `GET /remote/registries` - List registries
 - `GET /remote/registries/:name` - Get registry details
