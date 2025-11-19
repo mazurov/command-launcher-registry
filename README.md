@@ -15,6 +15,36 @@ Modern implementation of the Command Launcher remote registry with Gin web frame
 - 🛠️ **Powerful CLI**: Cobra-based management tool
 - 📦 **Clean Architecture**: Layered design with separation of concerns
 
+## Quick Start
+
+**📖 See [QUICKSTART.md](QUICKSTART.md) for detailed setup and usage instructions.**
+
+### Start Server
+
+```bash
+# Build binaries
+make build
+
+# PostgreSQL
+./bin/cola-registry-server --db-type postgres --db-dsn "host=localhost user=registry password=secret dbname=registry"
+
+# SQLite (development)
+./bin/cola-registry-server --db-type sqlite --db-dsn "registry.db"
+```
+
+### Use CLI
+
+```bash
+# Create registry
+./bin/cola-registry-cli registry create --name my-registry --description "My Registry"
+
+# Add package
+./bin/cola-registry-cli package create --registry my-registry --name my-package
+
+# Publish version
+./bin/cola-registry-cli version publish --registry my-registry --package my-package --version 1.0.0 --url http://example.com/pkg.zip
+```
+
 ## Architecture
 
 ```
@@ -32,31 +62,6 @@ Modern implementation of the Command Launcher remote registry with Gin web frame
 ├── pkg/
 │   └── types/           # Shared types
 └── migrations/          # Database migrations
-```
-
-## Quick Start
-
-### Start Server
-
-```bash
-# PostgreSQL
-go run cmd/server/main.go --db-type postgres --db-dsn "host=localhost user=registry password=secret dbname=registry"
-
-# SQLite (development)
-go run cmd/server/main.go --db-type sqlite --db-dsn "registry.db"
-```
-
-### Use CLI
-
-```bash
-# Create registry
-./bin/cola-registry-cli registry create --name my-registry --description "My Registry"
-
-# Add package
-./bin/cola-registry-cli package create --registry my-registry --name my-package
-
-# Publish version
-./bin/cola-registry-cli version publish --registry my-registry --package my-package --version 1.0.0 --url http://example.com/pkg.zip
 ```
 
 ## API Endpoints
