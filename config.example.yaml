@@ -1,0 +1,90 @@
+# Example configuration file for Command Launcher Registry Server
+# Copy this file to config.yaml and adjust values for your environment
+
+server:
+  port: 8080
+  mode: debug  # debug or release
+
+database:
+  type: sqlite  # postgres or sqlite
+  dsn: registry.db  # For SQLite: file path; For PostgreSQL: connection string
+
+auth:
+  strategy: github  # github, ldap (future), jwt (future)
+  jwt_secret: "change-me-in-production-use-long-random-string"
+  token_expiry: 24  # JWT token expiration in hours
+
+  # GitHub OAuth Configuration
+  github:
+    organization: criteo  # Your GitHub organization
+    client_id: "${GITHUB_CLIENT_ID}"  # Set via environment variable
+    client_secret: "${GITHUB_CLIENT_SECRET}"  # Set via environment variable
+    redirect_url: "http://localhost:8080/auth/github/callback"
+
+    # Teams with write access (users in these teams can create/update/delete)
+    # Users NOT in these teams have read-only access
+    write_teams:
+      - backend-team
+      - infrastructure
+      - devops-team
+
+    # OAuth scopes required
+    scopes:
+      - read:org  # Required to read team memberships
+      - user:email  # Required to get user email
+
+log:
+  level: info  # debug, info, warn, error
+  format: text  # text or json
+
+# Environment Variables Reference:
+# ----------------------------------
+# Required:
+#   REGISTRY_JWT_SECRET=your-secret-key
+#   REGISTRY_GITHUB_CLIENT_ID=your-client-id
+#   REGISTRY_GITHUB_CLIENT_SECRET=your-client-secret
+#
+# Optional:
+#   REGISTRY_PORT=8080
+#   REGISTRY_DB_TYPE=sqlite
+#   REGISTRY_DB_DSN=registry.db
+#   REGISTRY_AUTH_STRATEGY=github
+#   REGISTRY_GITHUB_ORG=criteo
+#   REGISTRY_GITHUB_REDIRECT_URL=http://localhost:8080/auth/github/callback
+#   REGISTRY_GITHUB_WRITE_TEAMS=backend-team,infrastructure,devops-team
+#   REGISTRY_LOG_LEVEL=info
+#   REGISTRY_LOG_FORMAT=text
+#   REGISTRY_MODE=debug
+
+# Command Line Flags Reference:
+# -------------------------------
+# ./cola-registry-server \
+#   --config config.yaml \
+#   --port 8080 \
+#   --db-type sqlite \
+#   --db-dsn registry.db \
+#   --auth-strategy github \
+#   --jwt-secret "your-secret" \
+#   --token-expiry 24 \
+#   --github-org criteo \
+#   --github-client-id "your-client-id" \
+#   --github-client-secret "your-client-secret" \
+#   --github-redirect-url "http://localhost:8080/auth/github/callback" \
+#   --github-write-teams "backend-team,infrastructure" \
+#   --log-level info \
+#   --mode debug
+
+# PostgreSQL Example:
+# -------------------
+# database:
+#   type: postgres
+#   dsn: "host=localhost user=registry password=secret dbname=registry port=5432 sslmode=disable"
+
+# Production Settings:
+# --------------------
+# - Use 'release' mode
+# - Set strong JWT secret (64+ random characters)
+# - Use HTTPS for redirect URLs
+# - Enable JSON logging for structured logs
+# - Use PostgreSQL for production deployments
+# - Store secrets in environment variables or secret management system

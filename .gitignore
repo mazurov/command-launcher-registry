@@ -1,6 +1,6 @@
 bin/
 data/
-*.db # Sqlite database files
+*.db
 
 # Test coverage
 coverage.out

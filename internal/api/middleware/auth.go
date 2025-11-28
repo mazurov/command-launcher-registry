@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/mazurov/command-launcher-registry/internal/auth"
 	"github.com/mazurov/command-launcher-registry/pkg/types"
 )
 
-// JWTAuth validates JWT tokens
-func JWTAuth(jwtSecret string) gin.HandlerFunc {
+// AuthMiddleware validates JWT token and populates user context
+func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -34,15 +34,8 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 		}
 
 		tokenString := parts[1]
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Validate signing method
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return []byte(jwtSecret), nil
-		})
-
-		if err != nil || !token.Valid {
+		claims, err := auth.ValidateToken(tokenString, jwtSecret)
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, types.ErrorResponse{
 				Error:   "unauthorized",
 				Message: "Invalid or expired token",
@@ -51,13 +44,21 @@ func JWTAuth(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// Store claims in context for later use
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			c.Set("user_claims", claims)
-		}
+		// Store user info in context
+		c.Set("user_id", claims.UserID)
+		c.Set("username", claims.Username)
+		c.Set("user_email", claims.Email)
+		c.Set("user_teams", claims.Teams)
+		c.Set("user_provider", claims.Provider)
 
 		c.Next()
 	}
+}
+
+// JWTAuth is deprecated, use AuthMiddleware instead
+// Kept for backward compatibility
+func JWTAuth(jwtSecret string) gin.HandlerFunc {
+	return AuthMiddleware(jwtSecret)
 }
 
 // APIKeyAuth validates API keys (simple implementation)
