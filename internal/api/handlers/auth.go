@@ -23,10 +23,10 @@ type stateInfo struct {
 
 // AuthHandler handles authentication requests
 type AuthHandler struct {
-	provider         provider.AuthProvider
-	config           *auth.Config
-	stateStore       map[string]*stateInfo // state -> info for OAuth state validation
-	cleanupDone      chan struct{}
+	provider          provider.AuthProvider
+	config            *auth.Config
+	stateStore        map[string]*stateInfo // state -> info for OAuth state validation
+	cleanupDone       chan struct{}
 	DeviceFlowHandler *DeviceFlowHandler // For device flow (set after creation)
 }
 

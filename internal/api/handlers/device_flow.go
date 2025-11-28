@@ -16,19 +16,19 @@ import (
 
 // DeviceCode represents a device authorization request
 type DeviceCode struct {
-	DeviceCode      string    `json:"device_code"`       // Code CLI uses to poll
-	UserCode        string    `json:"user_code"`         // Code user enters in browser
-	VerificationURI string    `json:"verification_uri"`  // URL user opens
-	ExpiresAt       time.Time `json:"expires_at"`        // When codes expire
-	Interval        int       `json:"interval"`          // Polling interval in seconds
+	DeviceCode      string    `json:"device_code"`      // Code CLI uses to poll
+	UserCode        string    `json:"user_code"`        // Code user enters in browser
+	VerificationURI string    `json:"verification_uri"` // URL user opens
+	ExpiresAt       time.Time `json:"expires_at"`       // When codes expire
+	Interval        int       `json:"interval"`         // Polling interval in seconds
 
 	// Internal state
-	Authorized bool      `json:"-"` // Whether user has authorized
-	UserID     string    `json:"-"` // User who authorized (from OAuth)
-	Username   string    `json:"-"`
-	Email      string    `json:"-"`
-	Teams      []string  `json:"-"`
-	Provider   string    `json:"-"`
+	Authorized bool     `json:"-"` // Whether user has authorized
+	UserID     string   `json:"-"` // User who authorized (from OAuth)
+	Username   string   `json:"-"`
+	Email      string   `json:"-"`
+	Teams      []string `json:"-"`
+	Provider   string   `json:"-"`
 }
 
 // DeviceFlowHandler manages device authorization flow
@@ -95,11 +95,11 @@ func (h *DeviceFlowHandler) HandleDeviceCode(c *gin.Context) {
 
 	// Return response to CLI
 	c.JSON(http.StatusOK, gin.H{
-		"device_code":       code.DeviceCode,
-		"user_code":         code.UserCode,
-		"verification_uri":  code.VerificationURI,
-		"expires_in":        int(time.Until(code.ExpiresAt).Seconds()),
-		"interval":          code.Interval,
+		"device_code":      code.DeviceCode,
+		"user_code":        code.UserCode,
+		"verification_uri": code.VerificationURI,
+		"expires_in":       int(time.Until(code.ExpiresAt).Seconds()),
+		"interval":         code.Interval,
 	})
 }
 
