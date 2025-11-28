@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	apiURL string
-	apiKey string
+	apiURL   string
+	jwtToken string
 
 	rootCmd = &cobra.Command{
 		Use:   "registry-cli",
@@ -19,8 +19,16 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "http://localhost:8080", "Registry API URL")
-	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API key for authentication")
+	// Get default values from environment variables
+	defaultAPIURL := os.Getenv("COLA_REGISTRY_URL")
+	if defaultAPIURL == "" {
+		defaultAPIURL = "http://localhost:8080"
+	}
+
+	defaultToken := os.Getenv("COLA_REGISTRY_TOKEN")
+
+	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", defaultAPIURL, "Registry API URL (env: COLA_REGISTRY_URL)")
+	rootCmd.PersistentFlags().StringVar(&jwtToken, "token", defaultToken, "JWT token for authentication (env: COLA_REGISTRY_TOKEN)")
 
 	// Add subcommands
 	rootCmd.AddCommand(registryCmd)

@@ -139,8 +139,30 @@ func doRequest(method, path string, body io.Reader) (*http.Response, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("X-API-Key", apiKey)
+
+	// Token priority cascade:
+	// 1. --token flag (jwtToken variable)
+	// 2. Environment variable COLA_REGISTRY_TOKEN
+	// 3. Stored token from interactive login (~/.config/cola-registry/config.yaml)
+
+	token := jwtToken
+
+	// If no token from flag, check environment variable
+	if token == "" {
+		token = os.Getenv("COLA_REGISTRY_TOKEN")
+	}
+
+	// If still no token, try to load from storage
+	if token == "" {
+		storage, err := loadToken()
+		if err == nil && storage != nil {
+			token = storage.Token
+		}
+	}
+
+	// Set Authorization header if token is available
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	return http.DefaultClient.Do(req)

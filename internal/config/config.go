@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 
+	"github.com/mazurov/command-launcher-registry/internal/auth"
 	"github.com/spf13/viper"
 )
 
@@ -10,7 +11,7 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
-	Auth     AuthConfig
+	Auth     auth.Config
 	Log      LogConfig
 }
 
@@ -26,7 +27,8 @@ type DatabaseConfig struct {
 	DSN  string // connection string
 }
 
-// AuthConfig holds authentication configuration
+// AuthConfig holds authentication configuration (deprecated, kept for reference)
+// Use auth.Config instead
 type AuthConfig struct {
 	JWTSecret string
 	APIKeys   []string
@@ -50,9 +52,18 @@ func LoadConfig() (*Config, error) {
 			Type: viper.GetString("db-type"),
 			DSN:  viper.GetString("db-dsn"),
 		},
-		Auth: AuthConfig{
-			JWTSecret: viper.GetString("jwt-secret"),
-			APIKeys:   viper.GetStringSlice("api-keys"),
+		Auth: auth.Config{
+			Strategy:    viper.GetString("auth-strategy"),
+			JWTSecret:   viper.GetString("jwt-secret"),
+			TokenExpiry: viper.GetInt("token-expiry"),
+			GitHub: &auth.GitHubConfig{
+				Organization: viper.GetString("github-org"),
+				ClientID:     viper.GetString("github-client-id"),
+				ClientSecret: viper.GetString("github-client-secret"),
+				RedirectURL:  viper.GetString("github-redirect-url"),
+				WriteTeams:   viper.GetStringSlice("github-write-teams"),
+				Scopes:       viper.GetStringSlice("github-scopes"),
+			},
 		},
 		Log: LogConfig{
 			Level:  viper.GetString("log-level"),
