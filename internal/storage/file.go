@@ -21,7 +21,14 @@ type FileStorage struct {
 }
 
 // NewFileStorage creates a new file-based storage
-func NewFileStorage(filePath string, logger *slog.Logger) (*FileStorage, error) {
+// The token parameter is accepted but ignored for file storage (for interface compatibility)
+func NewFileStorage(filePath string, token string, logger *slog.Logger) (*FileStorage, error) {
+	// Log warning if token is provided (file storage doesn't use it)
+	if token != "" {
+		logger.Warn("Storage token provided but file storage does not use authentication",
+			"file_path", filePath)
+	}
+
 	fs := &FileStorage{
 		filePath: filePath,
 		logger:   logger,

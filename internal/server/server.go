@@ -86,8 +86,7 @@ func (s *Server) Start() error {
 	s.logger.Info("Starting server",
 		"host", s.config.Server.Host,
 		"port", s.config.Server.Port,
-		"storage_type", s.config.Storage.Type,
-		"storage_path", s.config.Storage.Path,
+		"storage_uri", s.config.Storage.URI,
 		"auth_type", s.config.Auth.Type)
 
 	// Start server in goroutine

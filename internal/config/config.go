@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/criteo/command-launcher-registry/internal/storage"
 )
 
 // Config holds all configuration for the server
@@ -21,10 +23,10 @@ type ServerConfig struct {
 	Host string `mapstructure:"host"`
 }
 
-// StorageConfig holds storage configuration
+// StorageConfig holds storage configuration (URI-based)
 type StorageConfig struct {
-	Type string `mapstructure:"type"` // file | oci | s3 (future)
-	Path string `mapstructure:"path"` // for file storage
+	URI   string `mapstructure:"uri"`   // Storage URI (e.g., file://./data/registry.json)
+	Token string `mapstructure:"token"` // Opaque token for storage authentication
 }
 
 // AuthConfig holds authentication configuration
@@ -39,17 +41,18 @@ type LoggingConfig struct {
 	Format string `mapstructure:"format"` // json | text
 }
 
-// Load loads configuration from environment variables, config file, and defaults
-func Load(configFile string) (*Config, error) {
+// Load loads configuration from environment variables and defaults
+// CLI flags take precedence and are bound via viper in the CLI layer
+func Load() (*Config, error) {
 	v := viper.New()
 
 	// Set defaults
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.host", "0.0.0.0")
-	v.SetDefault("storage.type", "file")
-	v.SetDefault("storage.path", "./data/registry.json")
+	v.SetDefault("storage.uri", "file://./data/registry.json")
+	v.SetDefault("storage.token", "")
 	v.SetDefault("auth.type", "none")
-	v.SetDefault("auth.users_file", "./data/users.yaml")
+	v.SetDefault("auth.users_file", "./users.yaml")
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
 
@@ -57,14 +60,6 @@ func Load(configFile string) (*Config, error) {
 	v.SetEnvPrefix("COLA_REGISTRY")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
-
-	// Load config file if provided
-	if configFile != "" {
-		v.SetConfigFile(configFile)
-		if err := v.ReadInConfig(); err != nil {
-			return nil, fmt.Errorf("failed to read config file: %w", err)
-		}
-	}
 
 	// Unmarshal into config struct
 	var cfg Config
@@ -75,6 +70,40 @@ func Load(configFile string) (*Config, error) {
 	return &cfg, nil
 }
 
+// LoadWithViper loads configuration using a pre-configured viper instance
+// This allows CLI flags to be bound before loading
+func LoadWithViper(v *viper.Viper) (*Config, error) {
+	// Unmarshal into config struct
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// NewViper creates a new viper instance with defaults and environment binding
+func NewViper() *viper.Viper {
+	v := viper.New()
+
+	// Set defaults
+	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.host", "0.0.0.0")
+	v.SetDefault("storage.uri", "file://./data/registry.json")
+	v.SetDefault("storage.token", "")
+	v.SetDefault("auth.type", "none")
+	v.SetDefault("auth.users_file", "./users.yaml")
+	v.SetDefault("logging.level", "info")
+	v.SetDefault("logging.format", "json")
+
+	// Bind environment variables with COLA_REGISTRY_ prefix
+	v.SetEnvPrefix("COLA_REGISTRY")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	return v
+}
+
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	// Validate server config
@@ -82,9 +111,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("server.port must be between 1 and 65535")
 	}
 
-	// Validate storage type
-	if c.Storage.Type != "file" {
-		return fmt.Errorf("storage.type must be 'file' (oci and s3 not yet supported)")
+	// Validate storage URI
+	_, err := storage.ParseStorageURI(c.Storage.URI)
+	if err != nil {
+		return fmt.Errorf("invalid storage URI: %w", err)
 	}
 
 	// Validate auth type
@@ -104,4 +134,17 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// GetParsedStorageURI returns the parsed storage URI
+func (c *Config) GetParsedStorageURI() (*storage.StorageURI, error) {
+	return storage.ParseStorageURI(c.Storage.URI)
+}
+
+// MaskToken returns a masked version of the storage token for logging
+func (c *Config) MaskToken() string {
+	if c.Storage.Token == "" {
+		return ""
+	}
+	return "***"
 }

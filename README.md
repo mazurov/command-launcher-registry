@@ -44,19 +44,24 @@ make build-cli   # Build CLI client
 # Start server with default configuration
 ./bin/cola-registry server
 
+# With explicit storage URI
+./bin/cola-registry server --storage-uri file://./data/registry.json
+
+# With path only (auto-prefixed with file://)
+./bin/cola-registry server --storage-uri ./data/registry.json
+
+# Full CLI configuration
+./bin/cola-registry server \
+  --storage-uri file://./data/registry.json \
+  --port 8080 \
+  --host 0.0.0.0 \
+  --log-level info \
+  --log-format json \
+  --auth-type none
+
 # Or with environment variables
-COLA_REGISTRY_SERVER_PORT=9090 ./bin/cola-registry server
-
-# Or with config file (via flag)
-./bin/cola-registry server --config config.yaml
-
-# Or with config file (via environment variable)
-export COLA_REGISTRY_CONFIG_FILE=/etc/cola-registry/config.yaml
-./bin/cola-registry server
-
-# Combining config file and env overrides
-export COLA_REGISTRY_CONFIG_FILE=./config.yaml
-export COLA_REGISTRY_SERVER_PORT=9090  # Overrides port from config.yaml
+export COLA_REGISTRY_STORAGE_URI=file://./data/registry.json
+export COLA_REGISTRY_SERVER_PORT=8080
 ./bin/cola-registry server
 ```
 
@@ -161,35 +166,75 @@ curl http://localhost:8080/api/v1/registry/build/index.json | jq '.'
 
 ## Configuration
 
-Configuration can be provided via:
-1. Environment variables (highest priority)
-2. Configuration file
+Configuration follows [12-factor app](https://12factor.net/) principles:
+1. CLI flags (highest priority)
+2. Environment variables
 3. Defaults (lowest priority)
+
+No configuration file is required.
+
+### CLI Flags
+
+```bash
+cola-registry server [flags]
+
+Flags:
+  --storage-uri string     Storage URI (e.g., file://./data/registry.json)
+                           Default: file://./data/registry.json
+  --storage-token string   Storage authentication token (for future OCI support)
+                           Default: (empty)
+  --port int               Server port
+                           Default: 8080
+  --host string            Bind address
+                           Default: 0.0.0.0
+  --log-level string       Log level (debug|info|warn|error)
+                           Default: info
+  --log-format string      Log format (json|text)
+                           Default: json
+  --auth-type string       Authentication type (none|basic)
+                           Default: none
+```
 
 ### Environment Variables
 
-All configuration options use the `COLA_REGISTRY_` prefix:
+All CLI flags have corresponding environment variables with `COLA_REGISTRY_` prefix:
 
 ```bash
-# Config file path (alternative to --config flag)
-export COLA_REGISTRY_CONFIG_FILE=/path/to/config.yaml
-
-# Individual configuration options
+export COLA_REGISTRY_STORAGE_URI=file://./data/registry.json
+export COLA_REGISTRY_STORAGE_TOKEN=my-token        # For future OCI support
 export COLA_REGISTRY_SERVER_PORT=8080
 export COLA_REGISTRY_SERVER_HOST=0.0.0.0
-export COLA_REGISTRY_STORAGE_TYPE=file
-export COLA_REGISTRY_STORAGE_PATH=./data/registry.json
+export COLA_REGISTRY_LOGGING_LEVEL=info
+export COLA_REGISTRY_LOGGING_FORMAT=json
 export COLA_REGISTRY_AUTH_TYPE=basic
-export COLA_REGISTRY_AUTH_USERS_FILE=./users.yaml
-export COLA_REGISTRY_LOG_LEVEL=info
-export COLA_REGISTRY_LOG_FORMAT=json
+export COLA_REGISTRY_AUTH_USERS_FILE=./users.yaml  # Environment-only (no CLI flag)
 ```
 
-Priority order: **Environment variables > Config file > Defaults**
+Priority order: **CLI flags > Environment variables > Defaults**
 
-### Configuration File
+### Storage URI
 
-See `config.yaml.example` for all available options.
+The storage backend is configured via URI:
+
+```bash
+# File storage (currently supported)
+--storage-uri file://./data/registry.json       # Relative path
+--storage-uri file:///var/data/registry.json    # Absolute path (Unix)
+--storage-uri ./data/registry.json              # Auto-prefixed with file://
+
+# OCI storage (future, not yet implemented)
+--storage-uri oci://registry.example.com/repo
+```
+
+### Docker Usage
+
+```bash
+docker run -e COLA_REGISTRY_STORAGE_URI=file:///data/registry.json \
+           -e COLA_REGISTRY_SERVER_PORT=8080 \
+           -e COLA_REGISTRY_AUTH_TYPE=none \
+           -v /host/data:/data \
+           cola-registry server
+```
 
 ### Authentication Setup
 

@@ -1,8 +1,8 @@
 # COLA Registry Complete Specification
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Created**: 2025-11-29
-**Updated**: 2025-11-30
+**Updated**: 2025-12-01
 **Status**: Draft
 
 ## Overview
@@ -265,17 +265,25 @@ As a CLI user, I need to check my current authentication status and verify my cr
 
 #### Server Configuration
 
-- **FR-S020**: Server MUST support configuration via environment variables with prefix `COLA_REGISTRY_`.
+- **FR-S020**: Server MUST support configuration via CLI flags and environment variables with prefix `COLA_REGISTRY_`, following 12-factor app principles.
 
-- **FR-S021**: Server MUST accept `COLA_REGISTRY_SERVER_PORT` environment variable for port binding (default: 8080).
+- **FR-S021**: Server MUST accept `--port` CLI flag or `COLA_REGISTRY_SERVER_PORT` environment variable for port binding (default: 8080).
 
-- **FR-S022**: Server MUST accept `COLA_REGISTRY_STORAGE_PATH` environment variable for storage file path (default: ./data/registry.json).
+- **FR-S022**: Server MUST accept `--storage-uri` CLI flag or `COLA_REGISTRY_STORAGE_URI` environment variable for storage configuration using URI format (default: `file://./data/registry.json`).
 
-- **FR-S023**: Server MUST accept `COLA_REGISTRY_AUTH_TYPE` environment variable for authentication type (values: none, basic; default: none).
+- **FR-S022a**: Server MUST automatically prepend `file://` to storage paths that don't include a URI scheme (e.g., `./data/registry.json` becomes `file://./data/registry.json`).
 
-- **FR-S024**: Configuration precedence MUST be: environment variables > config file > defaults.
+- **FR-S022b**: Server MUST accept `--storage-token` CLI flag or `COLA_REGISTRY_STORAGE_TOKEN` environment variable for storage authentication (passed opaquely to storage backend).
 
-- **FR-S025**: Server MUST run without configuration file (using only env vars and defaults).
+- **FR-S023**: Server MUST accept `--auth-type` CLI flag or `COLA_REGISTRY_AUTH_TYPE` environment variable for authentication type (values: none, basic; default: none).
+
+- **FR-S024**: Configuration precedence MUST be: CLI flags > environment variables > defaults (no config file support).
+
+- **FR-S025**: Server MUST run without any configuration file (using only CLI flags, env vars, and defaults).
+
+- **FR-S025a**: Server MUST provide all configuration via CLI flags: `--storage-uri`, `--storage-token`, `--port`, `--host`, `--log-level`, `--log-format`, `--auth-type`.
+
+- **FR-S025b**: Server MUST log effective configuration at startup with masked sensitive values (storage token shown as `***`).
 
 #### Server Operations
 
@@ -640,21 +648,50 @@ token: "user:password"  # Linux only; macOS/Windows store in OS keychain
 
 ## Configuration
 
+Configuration follows [12-factor app](https://12factor.net/) principles. No configuration file is required.
+
+### Server CLI Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--storage-uri` | Storage URI (e.g., `file://./data/registry.json`) | `file://./data/registry.json` |
+| `--storage-token` | Storage authentication token (for future OCI support) | (empty) |
+| `--port` | Server port | 8080 |
+| `--host` | Bind address | 0.0.0.0 |
+| `--log-level` | Log level (debug\|info\|warn\|error) | info |
+| `--log-format` | Log format (json\|text) | json |
+| `--auth-type` | Authentication type (none\|basic) | none |
+
 ### Server Environment Variables
+
+All CLI flags have corresponding environment variables with `COLA_REGISTRY_` prefix:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `COLA_REGISTRY_CONFIG_FILE` | Path to config file | none |
+| `COLA_REGISTRY_STORAGE_URI` | Storage URI | `file://./data/registry.json` |
+| `COLA_REGISTRY_STORAGE_TOKEN` | Storage authentication token | (empty) |
 | `COLA_REGISTRY_SERVER_PORT` | HTTP port | 8080 |
 | `COLA_REGISTRY_SERVER_HOST` | Bind address | 0.0.0.0 |
-| `COLA_REGISTRY_STORAGE_TYPE` | Storage type | file |
-| `COLA_REGISTRY_STORAGE_PATH` | Storage file path | ./data/registry.json |
+| `COLA_REGISTRY_LOGGING_LEVEL` | Log level | info |
+| `COLA_REGISTRY_LOGGING_FORMAT` | Log format | json |
 | `COLA_REGISTRY_AUTH_TYPE` | Auth type (none/basic) | none |
-| `COLA_REGISTRY_AUTH_USERS_FILE` | Users file path | ./users.yaml |
-| `COLA_REGISTRY_LOG_LEVEL` | Log level | info |
-| `COLA_REGISTRY_LOG_FORMAT` | Log format (json/text) | json |
+| `COLA_REGISTRY_AUTH_USERS_FILE` | Users file path (env-only, no CLI flag) | ./users.yaml |
 
-### CLI Environment Variables
+### Storage URI
+
+The storage backend is configured via URI:
+
+```bash
+# File storage (currently supported)
+--storage-uri file://./data/registry.json       # Relative path
+--storage-uri file:///var/data/registry.json    # Absolute path (Unix)
+--storage-uri ./data/registry.json              # Auto-prefixed with file://
+
+# OCI storage (future, not yet implemented)
+--storage-uri oci://registry.example.com/repo
+```
+
+### CLI Client Environment Variables
 
 | Variable | Description |
 |----------|-------------|
@@ -663,9 +700,18 @@ token: "user:password"  # Linux only; macOS/Windows store in OS keychain
 
 ### Precedence Order
 
-1. **Server**: Environment variables > Config file > Defaults
+1. **Server**: CLI flags > Environment variables > Defaults
 2. **CLI (URL)**: `--url` flag > `COLA_REGISTRY_URL` env var > stored credentials
 3. **CLI (Token)**: `--token` flag > `COLA_REGISTRY_SESSION_TOKEN` env var > stored credentials
+
+### Server Exit Codes
+
+| Code | Description |
+|------|-------------|
+| 0 | Success |
+| 1 | Invalid configuration |
+| 2 | Storage initialization failure |
+| 3 | Server startup failure |
 
 ---
 
@@ -720,11 +766,14 @@ token: "user:password"  # Linux only; macOS/Windows store in OS keychain
 - Partition logic (which user gets which version) is handled by Command Launcher client, not this registry server.
 - Package files (ZIP archives) are hosted externally; registry stores URLs only.
 - HTTPS termination handled by reverse proxy in production.
-- Initial version uses file-based storage on disk; OCI/S3 backends can be added later.
+- Initial version uses file-based storage on disk; OCI storage backend can be added later via URI scheme extension.
 - CLI binary is named `cola-regctl` (distinct from server binary `cola-registry`).
 - CLI and server are versioned together (same version number).
 - Network connectivity exists between CLI and server.
 - User has necessary OS permissions to access credential storage.
+- Server configuration follows 12-factor app principles: no configuration file support, only CLI flags and environment variables.
+- Storage paths without a URI scheme (e.g., `./data/registry.json`) are treated as file paths and automatically get `file://` prepended.
+- Relative file paths are resolved relative to the current working directory where the server is started.
 
 ---
 

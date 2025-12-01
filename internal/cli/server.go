@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/criteo/command-launcher-registry/internal/auth"
 	"github.com/criteo/command-launcher-registry/internal/config"
@@ -13,7 +15,15 @@ import (
 	"github.com/criteo/command-launcher-registry/internal/storage"
 )
 
-var configFile string
+// Exit codes
+const (
+	ExitCodeOK                   = 0
+	ExitCodeInvalidConfig        = 1
+	ExitCodeStorageInitFailed    = 2
+	ExitCodeServerStartupFailed  = 3
+)
+
+var v *viper.Viper
 
 // ServerCmd represents the server command
 var ServerCmd = &cobra.Command{
@@ -24,45 +34,71 @@ var ServerCmd = &cobra.Command{
 }
 
 func init() {
-	ServerCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to configuration file (optional, can also use COLA_REGISTRY_CONFIG_FILE env var)")
+	v = config.NewViper()
+
+	// CLI flags - these take precedence over environment variables
+	ServerCmd.Flags().String("storage-uri", "", "Storage URI (e.g., file://./data/registry.json)")
+	ServerCmd.Flags().String("storage-token", "", "Storage authentication token (passed to storage backend)")
+	ServerCmd.Flags().Int("port", 0, "Server port")
+	ServerCmd.Flags().String("host", "", "Bind address")
+	ServerCmd.Flags().String("log-level", "", "Log level (debug|info|warn|error)")
+	ServerCmd.Flags().String("log-format", "", "Log format (json|text)")
+	ServerCmd.Flags().String("auth-type", "", "Authentication type (none|basic)")
+
+	// Bind CLI flags to viper
+	v.BindPFlag("storage.uri", ServerCmd.Flags().Lookup("storage-uri"))
+	v.BindPFlag("storage.token", ServerCmd.Flags().Lookup("storage-token"))
+	v.BindPFlag("server.port", ServerCmd.Flags().Lookup("port"))
+	v.BindPFlag("server.host", ServerCmd.Flags().Lookup("host"))
+	v.BindPFlag("logging.level", ServerCmd.Flags().Lookup("log-level"))
+	v.BindPFlag("logging.format", ServerCmd.Flags().Lookup("log-format"))
+	v.BindPFlag("auth.type", ServerCmd.Flags().Lookup("auth-type"))
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
-	// Check for config file from environment variable if not provided via flag
-	if configFile == "" {
-		configFile = os.Getenv("COLA_REGISTRY_CONFIG_FILE")
-	}
-
-	// Load configuration
-	cfg, err := config.Load(configFile)
+	// Load configuration (CLI flags > env vars > defaults)
+	cfg, err := config.LoadWithViper(v)
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to load configuration: %v\n", err)
+		os.Exit(ExitCodeInvalidConfig)
 	}
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid configuration: %w", err)
+		fmt.Fprintf(os.Stderr, "Error: invalid configuration: %v\n", err)
+		os.Exit(ExitCodeInvalidConfig)
 	}
 
 	// Create logger
 	logger := server.NewLogger(cfg.Logging.Level, cfg.Logging.Format)
 
-	// Log startup
-	logger.Info("Server starting",
-		"version", "1.0.0",
-		"port", cfg.Server.Port,
-		"config_file", configFile,
-		"storage_type", cfg.Storage.Type,
-		"storage_path", cfg.Storage.Path,
-		"auth_type", cfg.Auth.Type)
+	// Log effective configuration at startup (with masked token)
+	logEffectiveConfig(cfg, logger)
 
-	// Initialize storage
-	store, err := storage.NewFileStorage(cfg.Storage.Path, logger)
+	// Parse storage URI
+	storageURI, err := cfg.GetParsedStorageURI()
 	if err != nil {
-		logger.Error("Failed to initialize storage",
+		logger.Error("Failed to parse storage URI",
 			"error", err,
-			"storage_path", cfg.Storage.Path)
-		return fmt.Errorf("failed to initialize storage: %w", err)
+			"storage_uri", cfg.Storage.URI)
+		os.Exit(ExitCodeInvalidConfig)
+	}
+
+	// Initialize storage based on scheme
+	var store storage.Store
+	switch storageURI.Scheme {
+	case "file":
+		store, err = storage.NewFileStorage(storageURI.Path, cfg.Storage.Token, logger)
+		if err != nil {
+			logger.Error("Failed to initialize storage",
+				"error", err,
+				"storage_uri", cfg.Storage.URI)
+			os.Exit(ExitCodeStorageInitFailed)
+		}
+	default:
+		logger.Error("Unsupported storage scheme",
+			"scheme", storageURI.Scheme)
+		os.Exit(ExitCodeInvalidConfig)
 	}
 
 	// Initialize authenticator
@@ -77,10 +113,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 			logger.Error("Failed to initialize basic auth",
 				"error", err,
 				"users_file", cfg.Auth.UsersFile)
-			return fmt.Errorf("failed to initialize basic auth: %w", err)
+			os.Exit(ExitCodeStorageInitFailed)
 		}
 	default:
-		return fmt.Errorf("unsupported auth type: %s", cfg.Auth.Type)
+		logger.Error("Unsupported auth type", "auth_type", cfg.Auth.Type)
+		os.Exit(ExitCodeInvalidConfig)
 	}
 
 	// Create server
@@ -124,8 +161,28 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	if err := srv.Start(); err != nil {
 		logger.Error("Server stopped with error", "error", err)
-		return err
+		os.Exit(ExitCodeServerStartupFailed)
 	}
 
 	return nil
+}
+
+// logEffectiveConfig logs the effective configuration at startup
+func logEffectiveConfig(cfg *config.Config, logger *slog.Logger) {
+	tokenDisplay := cfg.MaskToken()
+	if tokenDisplay == "" {
+		tokenDisplay = "(not set)"
+	}
+
+	logger.Info("Server starting with configuration",
+		"version", "1.0.0",
+		"storage_uri", cfg.Storage.URI,
+		"storage_token", tokenDisplay,
+		"port", cfg.Server.Port,
+		"host", cfg.Server.Host,
+		"log_level", cfg.Logging.Level,
+		"log_format", cfg.Logging.Format,
+		"auth_type", cfg.Auth.Type,
+		"auth_users_file", cfg.Auth.UsersFile,
+	)
 }
