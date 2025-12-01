@@ -1,0 +1,46 @@
+# Go build artifacts
+*.exe
+*.test
+*.out
+vendor/
+bin/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application data
+data/
+
+# Runtime data files (but not spec/doc/config files)
+*.json
+
+# YAML files (ignore runtime configs, keep examples and specs)
+*.yaml
+*.yml
+!.golangci.yml
+specs
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+
+# Test coverage
+coverage.txt
+*.cover
+*.coverprofile
+
+# Temporary files
+*.tmp
+tmp/
