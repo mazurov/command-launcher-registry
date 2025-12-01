@@ -28,6 +28,7 @@ data/
 *.yml
 !.golangci.yml
 specs
+!docs/*.yaml
 
 # Logs
 *.log

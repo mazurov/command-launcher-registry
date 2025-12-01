@@ -1,0 +1,960 @@
+openapi: 3.1.0
+info:
+  title: COLA Remote Registry API
+  description: REST API for Command Launcher remote registry management
+  version: 1.0.0
+  contact:
+    name: COLA Team
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Server health check
+  - name: Authentication
+    description: Authentication and user identity operations
+  - name: Index
+    description: Registry index for Command Launcher clients
+  - name: Registry
+    description: Registry management operations
+  - name: Package
+    description: Package management operations
+  - name: Version
+    description: Version management operations
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns server health status for load balancer checks
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                    example: ok
+                  version:
+                    type: string
+                    description: Server version
+                    example: '1.0.0'
+
+  /metrics:
+    get:
+      tags:
+        - Health
+      summary: Get server metrics
+      description: Returns basic HTTP metrics for monitoring (NFR-009)
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Server metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: object
+                    description: Request count by endpoint and status code
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        type: integer
+                  errors:
+                    type: object
+                    description: Error rate by status code category
+                    properties:
+                      '4xx':
+                        type: integer
+                        description: Client error count
+                      '5xx':
+                        type: integer
+                        description: Server error count
+                  latency:
+                    type: object
+                    description: Request latency percentiles by endpoint (milliseconds)
+                    additionalProperties:
+                      type: object
+                      properties:
+                        p50:
+                          type: number
+                          format: float
+                        p95:
+                          type: number
+                          format: float
+                        p99:
+                          type: number
+                          format: float
+
+  /whoami:
+    get:
+      tags:
+        - Authentication
+      summary: Get authenticated user identity
+      description: |
+        Returns the username of the currently authenticated user.
+        This endpoint requires authentication and is used by the CLI to verify credentials
+        during login and to check current authentication status.
+
+        Unlike /health (which is unprotected), /whoami always requires valid credentials.
+      operationId: whoami
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: Successfully authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - username
+                properties:
+                  username:
+                    type: string
+                    description: Username of the authenticated user
+                    example: admin
+        '401':
+          description: Authentication required or invalid credentials
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                example: 'Basic realm="COLA Registry"'
+              description: Challenge for HTTP Basic Authentication
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Unauthorized
+
+  /registry/{name}/index.json:
+    get:
+      tags:
+        - Index
+      summary: Get registry index
+      description: Returns Command Launcher compatible index with all package versions
+      operationId: getRegistryIndex
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+      responses:
+        '200':
+          description: Registry index
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+              description: CORS header allowing access from any origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    options:
+      tags:
+        - Index
+      summary: CORS preflight request
+      description: Handles CORS preflight requests for index.json endpoint (NFR-007a)
+      operationId: indexCorsPreflightCheck
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+      responses:
+        '200':
+          description: CORS preflight successful
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+              description: Allow requests from any origin
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'GET, OPTIONS'
+              description: Allowed HTTP methods
+            Access-Control-Max-Age:
+              schema:
+                type: integer
+                example: 86400
+              description: Cache duration for preflight response in seconds (24 hours)
+
+  /registry:
+    get:
+      tags:
+        - Registry
+      summary: List all registries
+      operationId: listRegistries
+      security:
+        - basicAuth: []
+        - {}
+      responses:
+        '200':
+          description: List of registries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RegistrySummary'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    post:
+      tags:
+        - Registry
+      summary: Create a new registry
+      operationId: createRegistry
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRegistryRequest'
+      responses:
+        '201':
+          description: Registry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /registry/{name}:
+    get:
+      tags:
+        - Registry
+      summary: Get registry details
+      operationId: getRegistry
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+      security:
+        - basicAuth: []
+        - {}
+      responses:
+        '200':
+          description: Registry details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    put:
+      tags:
+        - Registry
+      summary: Update registry metadata
+      operationId: updateRegistry
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRegistryRequest'
+      responses:
+        '200':
+          description: Registry updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    delete:
+      tags:
+        - Registry
+      summary: Delete a registry
+      description: Deletes the registry and all its packages
+      operationId: deleteRegistry
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+      security:
+        - basicAuth: []
+      responses:
+        '204':
+          description: Registry deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /registry/{name}/package:
+    get:
+      tags:
+        - Package
+      summary: List packages in registry
+      operationId: listPackages
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+      security:
+        - basicAuth: []
+        - {}
+      responses:
+        '200':
+          description: List of packages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PackageSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    post:
+      tags:
+        - Package
+      summary: Create a new package
+      operationId: createPackage
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePackageRequest'
+      responses:
+        '201':
+          description: Package created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /registry/{name}/package/{package}:
+    get:
+      tags:
+        - Package
+      summary: Get package details
+      operationId: getPackage
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+        - $ref: '#/components/parameters/PackageName'
+      security:
+        - basicAuth: []
+        - {}
+      responses:
+        '200':
+          description: Package details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    delete:
+      tags:
+        - Package
+      summary: Delete a package
+      description: Deletes the package and all its versions
+      operationId: deletePackage
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+        - $ref: '#/components/parameters/PackageName'
+      security:
+        - basicAuth: []
+      responses:
+        '204':
+          description: Package deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /registry/{name}/package/{package}/version:
+    get:
+      tags:
+        - Version
+      summary: List versions of a package
+      operationId: listVersions
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+        - $ref: '#/components/parameters/PackageName'
+      security:
+        - basicAuth: []
+        - {}
+      responses:
+        '200':
+          description: List of versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Version'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    post:
+      tags:
+        - Version
+      summary: Create a new version
+      description: Creates an immutable package version
+      operationId: createVersion
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+        - $ref: '#/components/parameters/PackageName'
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVersionRequest'
+      responses:
+        '201':
+          description: Version created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Version'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /registry/{name}/package/{package}/version/{version}:
+    get:
+      tags:
+        - Version
+      summary: Get version details
+      operationId: getVersion
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+        - $ref: '#/components/parameters/PackageName'
+        - $ref: '#/components/parameters/VersionString'
+      security:
+        - basicAuth: []
+        - {}
+      responses:
+        '200':
+          description: Version details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Version'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    delete:
+      tags:
+        - Version
+      summary: Delete a version
+      operationId: deleteVersion
+      parameters:
+        - $ref: '#/components/parameters/RegistryName'
+        - $ref: '#/components/parameters/PackageName'
+        - $ref: '#/components/parameters/VersionString'
+      security:
+        - basicAuth: []
+      responses:
+        '204':
+          description: Version deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: HTTP Basic Authentication with bcrypt-hashed passwords
+
+  parameters:
+    RegistryName:
+      name: name
+      in: path
+      required: true
+      description: Registry name
+      schema:
+        type: string
+        pattern: '^[a-z0-9][a-z0-9_-]*$'
+        minLength: 1
+        maxLength: 64
+
+    PackageName:
+      name: package
+      in: path
+      required: true
+      description: Package name
+      schema:
+        type: string
+        pattern: '^[a-z0-9][a-z0-9_-]*$'
+        minLength: 1
+        maxLength: 64
+
+    VersionString:
+      name: version
+      in: path
+      required: true
+      description: Version string (semver)
+      schema:
+        type: string
+        example: '1.0.0'
+
+  schemas:
+    IndexResponse:
+      type: array
+      description: Command Launcher compatible index format
+      items:
+        $ref: '#/components/schemas/IndexEntry'
+
+    IndexEntry:
+      type: object
+      required:
+        - name
+        - version
+        - checksum
+        - url
+        - startPartition
+        - endPartition
+      properties:
+        name:
+          type: string
+          description: Package name
+          example: hotfix
+        version:
+          type: string
+          description: Version string
+          example: '1.0.0'
+        checksum:
+          type: string
+          description: SHA256 checksum with prefix
+          pattern: '^sha256:[a-f0-9]{64}$'
+          example: 'sha256:abc123def456...'
+        url:
+          type: string
+          format: uri
+          description: Download URL (HTTP/HTTPS)
+          pattern: '^https?://'
+          maxLength: 2048
+          example: 'https://artifacts.example.com/hotfix-1.0.0.zip'
+        startPartition:
+          type: integer
+          minimum: 0
+          maximum: 9
+          description: Start of partition range
+          example: 0
+        endPartition:
+          type: integer
+          minimum: 0
+          maximum: 9
+          description: End of partition range
+          example: 9
+
+    CustomValues:
+      type: object
+      description: Arbitrary key-value metadata (max 20 pairs)
+      maxProperties: 20
+      additionalProperties:
+        type: string
+        maxLength: 1024
+      propertyNames:
+        pattern: '^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$'
+      example:
+        team: platform
+        slack_channel: '#build-tools'
+
+    Registry:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]*$'
+          minLength: 1
+          maxLength: 64
+          example: build
+        description:
+          type: string
+          maxLength: 4096
+          example: Build tools registry
+        admins:
+          type: array
+          description: List of admin usernames (informational only, not enforced in v1)
+          items:
+            type: string
+          example: ['admin', 'team-build']
+        custom_values:
+          $ref: '#/components/schemas/CustomValues'
+
+    RegistrySummary:
+      type: object
+      properties:
+        name:
+          type: string
+          example: build
+        description:
+          type: string
+          maxLength: 4096
+          example: Build tools registry
+        package_count:
+          type: integer
+          example: 5
+
+    CreateRegistryRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]*$'
+          minLength: 1
+          maxLength: 64
+          example: build
+        description:
+          type: string
+          maxLength: 4096
+          example: Build tools registry
+        admins:
+          type: array
+          description: List of admin usernames (informational only, not enforced in v1)
+          items:
+            type: string
+          example: ['admin']
+        custom_values:
+          $ref: '#/components/schemas/CustomValues'
+
+    UpdateRegistryRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 4096
+          example: Updated description
+        admins:
+          type: array
+          items:
+            type: string
+        custom_values:
+          $ref: '#/components/schemas/CustomValues'
+
+    Package:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]*$'
+          minLength: 1
+          maxLength: 64
+          example: hotfix
+        description:
+          type: string
+          maxLength: 4096
+          example: Hotfix deployment tool
+        maintainers:
+          type: array
+          description: List of maintainer usernames (informational only, not enforced in v1)
+          items:
+            type: string
+          example: ['team-build']
+        custom_values:
+          $ref: '#/components/schemas/CustomValues'
+
+    PackageSummary:
+      type: object
+      properties:
+        name:
+          type: string
+          example: hotfix
+        description:
+          type: string
+          maxLength: 4096
+          example: Hotfix deployment tool
+        version_count:
+          type: integer
+          example: 3
+
+    CreatePackageRequest:
+      type: object
+      required:
+        - name
+        - maintainers
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]*$'
+          minLength: 1
+          maxLength: 64
+          example: hotfix
+        description:
+          type: string
+          maxLength: 4096
+          example: Hotfix deployment tool
+        maintainers:
+          type: array
+          description: List of maintainer usernames (informational only, not enforced in v1)
+          items:
+            type: string
+          example: ['team-build']
+        custom_values:
+          $ref: '#/components/schemas/CustomValues'
+
+    Version:
+      type: object
+      required:
+        - name
+        - version
+        - checksum
+        - url
+        - startPartition
+        - endPartition
+      properties:
+        name:
+          type: string
+          example: hotfix
+        version:
+          type: string
+          example: '1.0.0'
+        checksum:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+          example: 'sha256:abc123def456789...'
+        url:
+          type: string
+          format: uri
+          pattern: '^https?://'
+          maxLength: 2048
+          example: 'https://artifacts.example.com/hotfix-1.0.0.zip'
+        startPartition:
+          type: integer
+          example: 0
+        endPartition:
+          type: integer
+          example: 9
+
+    CreateVersionRequest:
+      type: object
+      required:
+        - version
+        - checksum
+        - url
+        - startPartition
+        - endPartition
+      properties:
+        version:
+          type: string
+          example: '1.0.0'
+        checksum:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+          example: 'sha256:abc123def456789...'
+        url:
+          type: string
+          format: uri
+          pattern: '^https?://'
+          maxLength: 2048
+          example: 'https://artifacts.example.com/hotfix-1.0.0.zip'
+        startPartition:
+          type: integer
+          example: 0
+        endPartition:
+          type: integer
+          example: 9
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          enum:
+            - REGISTRY_NOT_FOUND
+            - REGISTRY_ALREADY_EXISTS
+            - PACKAGE_NOT_FOUND
+            - PACKAGE_ALREADY_EXISTS
+            - VERSION_NOT_FOUND
+            - VERSION_ALREADY_EXISTS
+            - VALIDATION_ERROR
+            - INVALID_PARTITION
+            - PARTITION_OVERLAP
+            - STORAGE_UNAVAILABLE
+            - UNAUTHORIZED
+            - RATE_LIMIT_EXCEEDED
+          example: REGISTRY_NOT_FOUND
+        message:
+          type: string
+          description: Human-readable error message
+          example: Registry 'build' not found
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_ERROR
+            message: Invalid request body
+            details:
+              field: name
+              error: must match pattern ^[a-z0-9][a-z0-9_-]*$
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Authentication required
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: Insufficient permissions to perform this action
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REGISTRY_NOT_FOUND
+            message: Registry 'unknown' not found
+
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VERSION_ALREADY_EXISTS
+            message: Version '1.0.0' already exists (immutable)
+
+    ServiceUnavailable:
+      description: Service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: STORAGE_UNAVAILABLE
+            message: Storage backend is unavailable
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            description: Seconds until rate limit resets
+            example: 60
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMIT_EXCEEDED
+            message: Rate limit exceeded. Try again in 60 seconds
