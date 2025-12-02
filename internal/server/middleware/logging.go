@@ -28,6 +28,13 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 			// Generate request ID
 			requestID := uuid.New().String()
 
+			// Log request start
+			logger.Info("Request received",
+				"request_id", requestID,
+				"method", r.Method,
+				"endpoint", r.URL.Path,
+				"remote_addr", r.RemoteAddr)
+
 			// Wrap response writer to capture status code
 			wrapped := &responseWriter{
 				ResponseWriter: w,

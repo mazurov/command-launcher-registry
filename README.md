@@ -10,7 +10,7 @@ A complete solution for hosting and managing Command Launcher remote registries,
 - **Gradual Rollout**: Partition-based version distribution (0-9 range)
 - **Command Launcher Compatible**: Serves index.json in CDT-compatible format
 - **Authentication**: Optional HTTP Basic Auth for write operations
-- **File-Based Storage**: Simple JSON storage with atomic writes
+- **Pluggable Storage**: File-based JSON storage or OCI registry storage (ghcr.io, Docker Hub, etc.)
 - **Operational Ready**: Health checks, metrics, structured logging
 
 ### CLI Client (`cola-regctl`)
@@ -179,9 +179,9 @@ No configuration file is required.
 cola-registry server [flags]
 
 Flags:
-  --storage-uri string     Storage URI (e.g., file://./data/registry.json)
+  --storage-uri string     Storage URI (file:// for local, oci:// for OCI registry)
                            Default: file://./data/registry.json
-  --storage-token string   Storage authentication token (for future OCI support)
+  --storage-token string   Storage authentication token (required for OCI storage)
                            Default: (empty)
   --port int               Server port
                            Default: 8080
@@ -201,7 +201,7 @@ All CLI flags have corresponding environment variables with `COLA_REGISTRY_` pre
 
 ```bash
 export COLA_REGISTRY_STORAGE_URI=file://./data/registry.json
-export COLA_REGISTRY_STORAGE_TOKEN=my-token        # For future OCI support
+export COLA_REGISTRY_STORAGE_TOKEN=my-token        # Required for OCI storage
 export COLA_REGISTRY_SERVER_PORT=8080
 export COLA_REGISTRY_SERVER_HOST=0.0.0.0
 export COLA_REGISTRY_LOGGING_LEVEL=info
@@ -217,23 +217,47 @@ Priority order: **CLI flags > Environment variables > Defaults**
 The storage backend is configured via URI:
 
 ```bash
-# File storage (currently supported)
+# File storage
 --storage-uri file://./data/registry.json       # Relative path
 --storage-uri file:///var/data/registry.json    # Absolute path (Unix)
 --storage-uri ./data/registry.json              # Auto-prefixed with file://
 
-# OCI storage (future, not yet implemented)
---storage-uri oci://registry.example.com/repo
+# OCI storage (GitHub Container Registry)
+--storage-uri oci://ghcr.io/myorg/cola-registry-data
+--storage-token ghp_xxxxxxxxxxxxxxxxxxxx
+
+# OCI storage (Docker Hub)
+--storage-uri oci://docker.io/myuser/cola-registry-data
+--storage-token dckr_pat_xxxxxxxxx
+
+# OCI storage (Azure Container Registry)
+--storage-uri oci://myregistry.azurecr.io/cola-registry-data
+--storage-token <acr-token>
 ```
+
+**OCI Storage Notes**:
+- OCI storage requires `--storage-token` or `COLA_REGISTRY_STORAGE_TOKEN` environment variable
+- The registry data is stored as an OCI artifact with `latest` tag (overwritten on each write)
+- Supports any OCI Distribution-compliant registry
+- Token format is registry-specific (e.g., GitHub PAT for ghcr.io)
 
 ### Docker Usage
 
 ```bash
-docker run -e COLA_REGISTRY_STORAGE_URI=file:///data/registry.json \
-           -e COLA_REGISTRY_SERVER_PORT=8080 \
-           -e COLA_REGISTRY_AUTH_TYPE=none \
-           -v /host/data:/data \
-           cola-registry server
+# Build the image
+docker build -t cola-registry -f docker/Dockerfile .
+
+# Run with file storage
+docker run -p 8080:8080 \
+  -e COLA_REGISTRY_STORAGE_URI=file:///data/registry.json \
+  -v /host/data:/data \
+  cola-registry
+
+# Run with OCI storage
+docker run -p 8080:8080 \
+  -e COLA_REGISTRY_STORAGE_URI=oci://ghcr.io/myorg/cola-registry-data \
+  -e COLA_REGISTRY_STORAGE_TOKEN=ghp_xxxxxxxxxxxx \
+  cola-registry
 ```
 
 ### Authentication Setup
@@ -541,7 +565,7 @@ internal/
 │   ├── prompts/            # Interactive prompts
 │   ├── validation/         # Client-side validation
 │   └── errors/             # Error handling and exit codes
-├── storage/                # Storage layer
+├── storage/                # Storage layer (file, OCI)
 ├── models/                 # Shared data models
 ├── auth/                   # Server authentication
 ├── cli/                    # Server CLI commands
@@ -552,6 +576,8 @@ scripts/
 ├── clean-test-data.sh          # curl-based cleanup
 ├── populate-test-data-cli.sh   # CLI-based test data
 └── clean-test-data-cli.sh      # CLI-based cleanup
+docker/
+└── Dockerfile                  # Multi-stage Docker build
 docs/
 └── spec.md                     # Complete specification
 ```

@@ -65,10 +65,9 @@ func TestValidate_StorageURI(t *testing.T) {
 			errMsg:    "unsupported storage scheme",
 		},
 		{
-			name:      "oci scheme not yet implemented",
+			name:      "valid oci scheme",
 			uri:       "oci://registry.example.com/repo",
-			wantError: true,
-			errMsg:    "not yet implemented",
+			wantError: false,
 		},
 		{
 			name:      "empty URI",

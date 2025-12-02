@@ -1,8 +1,8 @@
 # COLA Registry Complete Specification
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Created**: 2025-11-29
-**Updated**: 2025-12-01
+**Updated**: 2025-12-02
 **Status**: Draft
 
 ## Overview
@@ -208,6 +208,80 @@ As a CLI user, I need to check my current authentication status and verify my cr
 
 3. **Given** I am not logged in, **When** I run `cola-regctl whoami`, **Then** it displays error "Not logged in to any server" with exit code 5.
 
+### OCI Storage Backend Scenarios
+
+#### Scenario 12: Configure OCI Storage via URI (Priority: P1)
+
+As an operator, I want to configure the cola-registry server to store its data in an OCI registry (like GitHub Container Registry) using a URI like `oci://ghcr.io/myorg/cola-registry-data`, so that I can leverage existing container registry infrastructure for durable, versioned storage without managing local file systems.
+
+**Success Criteria**:
+- Server starts successfully with OCI storage URI and token
+- Server connects to OCI registry and can perform basic operations
+- Clear error messages when configuration is invalid
+
+**Acceptance Scenarios**:
+
+1. **Given** a server with no configuration, **When** the operator provides `--storage-uri oci://ghcr.io/myorg/cola-registry-data` and `--storage-token <token>`, **Then** the server starts and connects to the OCI registry.
+
+2. **Given** a server configured with OCI storage URI but no token, **When** the server starts, **Then** it fails with a clear error message indicating authentication is required for OCI storage.
+
+3. **Given** a server configured with OCI storage, **When** the OCI registry is unreachable, **Then** the server fails to start with a clear error message indicating the connection failure.
+
+4. **Given** a server configured with OCI storage pointing to a repository that doesn't exist yet, **When** the server starts, **Then** it creates an initial empty registry artifact in the OCI repository.
+
+#### Scenario 13: Persist Registry Data to OCI (Priority: P1)
+
+As an operator, I want every write operation (create/update/delete registry, package, or version) to persist the complete registry JSON to the OCI repository, so that my data is durably stored and can survive server restarts or migrations.
+
+**Success Criteria**:
+- All write operations result in a new artifact pushed to OCI registry
+- Failed pushes cause operation rollback and error response
+- Server can restart and resume with OCI-stored data
+
+**Acceptance Scenarios**:
+
+1. **Given** a server running with OCI storage, **When** a registry is created via REST API, **Then** the updated registry data is pushed to the OCI repository as a new artifact.
+
+2. **Given** a server running with OCI storage, **When** a package version is created, **Then** the updated registry data is pushed to the OCI repository.
+
+3. **Given** a server running with OCI storage, **When** a push to OCI fails (network error, auth expired), **Then** the operation fails, the in-memory state is rolled back, and a storage error is returned to the client.
+
+4. **Given** a server running with OCI storage, **When** the server restarts, **Then** it loads the latest registry data from the OCI repository and resumes normal operation.
+
+#### Scenario 14: Load Registry Data from OCI on Startup (Priority: P2)
+
+As an operator, I want the server to load existing registry data from the OCI repository when it starts, so that I can restart or replace servers without losing data.
+
+**Success Criteria**:
+- New server instance loads existing data from OCI repository
+- Empty repositories initialize with empty registry data
+- Corrupted data causes clear error message
+
+**Acceptance Scenarios**:
+
+1. **Given** an OCI repository with existing registry data, **When** a new server instance starts with that OCI URI, **Then** the server loads the existing data and serves it correctly.
+
+2. **Given** an OCI repository with no registry data (empty or non-existent), **When** the server starts, **Then** the server initializes with empty registry data and creates an initial artifact.
+
+3. **Given** an OCI repository with corrupted or invalid JSON data, **When** the server starts, **Then** the server fails with a clear error message about data corruption.
+
+#### Scenario 15: Support Multiple OCI Registries (Priority: P3)
+
+As an operator, I want to use different OCI registries (GitHub Container Registry, Docker Hub, Azure Container Registry, AWS ECR, etc.) with the same URI scheme, so that I can choose the registry that fits my infrastructure.
+
+**Success Criteria**:
+- Server works with any OCI Distribution-compliant registry
+- Authentication works with registry-specific tokens
+- Same URI scheme for all registries
+
+**Acceptance Scenarios**:
+
+1. **Given** a server configured with `oci://ghcr.io/org/repo`, **When** the server performs storage operations, **Then** it uses GitHub Container Registry authentication and APIs.
+
+2. **Given** a server configured with `oci://docker.io/user/repo`, **When** the server performs storage operations, **Then** it uses Docker Hub authentication and APIs.
+
+3. **Given** a server configured with `oci://myregistry.azurecr.io/repo`, **When** the server performs storage operations, **Then** it uses Azure Container Registry authentication and APIs.
+
 ---
 
 ## Functional Requirements
@@ -345,6 +419,46 @@ As a CLI user, I need to check my current authentication status and verify my cr
 - **FR-S044**: Project MUST include a shell script (`scripts/populate-test-data.sh`) that uses the REST API to create test registries, packages, and versions.
 
 - **FR-S045**: Project MUST include a cleanup script (`scripts/clean-test-data.sh`) that removes all test data.
+
+#### OCI Storage Backend
+
+- **FR-S046**: System MUST support the `oci://` URI scheme for OCI registry storage configuration.
+
+- **FR-S047**: System MUST parse OCI URIs to extract: registry host, repository path, and optional tag/digest.
+
+- **FR-S048**: System MUST require a storage token when OCI storage is configured (fail startup if missing).
+
+- **FR-S049**: System MUST authenticate to OCI registries using the provided storage token.
+
+- **FR-S050**: System MUST push the complete registry JSON as an OCI artifact after every write operation, always overwriting the `latest` tag.
+
+- **FR-S051**: System MUST pull the latest registry data from the OCI repository on server startup.
+
+- **FR-S052**: System MUST create an initial empty registry artifact if the OCI repository is empty or does not exist.
+
+- **FR-S053**: System MUST roll back in-memory state if OCI push fails.
+
+- **FR-S054**: System MUST use `application/json` as the OCI artifact media type for the registry JSON data.
+
+- **FR-S055**: System MUST support common OCI registries: ghcr.io, docker.io, and registries implementing OCI Distribution spec.
+
+- **FR-S056**: System MUST reuse common storage logic between file and OCI backends (in-memory data model, CRUD operations, validation).
+
+- **FR-S057**: System MUST use pessimistic locking (mutex) to ensure single-writer semantics for concurrent requests.
+
+- **FR-S058**: System MUST log OCI operations (push, pull) with timing and size information.
+
+- **FR-S059**: System MUST provide clear error messages distinguishing between authentication, network, and storage errors.
+
+- **FR-S060**: System MUST reject OCI URIs with unsupported components (query parameters, fragments) with a clear validation error.
+
+- **FR-S061**: System MUST enforce timeout limits: 60 seconds for push operations, 30 seconds for pull operations on startup.
+
+- **FR-S062**: System MUST support OCI registries that implement manifest push/pull and blob upload (OCI Distribution Spec 1.0 minimum).
+
+- **FR-S063**: System MUST gracefully handle registries that don't support artifact annotations (annotations are optional metadata).
+
+- **FR-S064**: System MUST use the existing storage factory pattern to instantiate OCI storage when `oci://` scheme is detected.
 
 ### CLI Client Requirements
 
@@ -596,6 +710,14 @@ url: "https://registry.example.com"
 token: "user:password"  # Linux only; macOS/Windows store in OS keychain
 ```
 
+### OCI Storage Entities
+
+- **OCI Artifact**: A container image-like object stored in an OCI registry containing the registry JSON data as a blob with `application/json` media type. Always tagged as `latest` (overwritten on each push, no version history).
+
+- **Registry Data**: The same JSON structure used by file storage (`{"registries": {...}}`) stored as the artifact's content.
+
+- **Storage Token**: An authentication token (e.g., GitHub PAT, Docker Hub token) used to authenticate with the OCI registry. Token format is registry-specific.
+
 ---
 
 ## API Contract
@@ -642,6 +764,8 @@ token: "user:password"  # Linux only; macOS/Windows store in OS keychain
 | INVALID_PARTITION | 400 | Partition values out of range |
 | PARTITION_OVERLAP | 400 | Partition overlap detected |
 | STORAGE_UNAVAILABLE | 503 | Storage backend unavailable |
+| OCI_AUTH_ERROR | 503 | OCI registry authentication failed |
+| OCI_CONNECTION_ERROR | 503 | OCI registry connection failed |
 | UNAUTHORIZED | 401 | Authentication required/failed |
 
 ---
@@ -654,8 +778,8 @@ Configuration follows [12-factor app](https://12factor.net/) principles. No conf
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--storage-uri` | Storage URI (e.g., `file://./data/registry.json`) | `file://./data/registry.json` |
-| `--storage-token` | Storage authentication token (for future OCI support) | (empty) |
+| `--storage-uri` | Storage URI (`file://` for local, `oci://` for OCI registry) | `file://./data/registry.json` |
+| `--storage-token` | Storage authentication token (required for OCI storage) | (empty) |
 | `--port` | Server port | 8080 |
 | `--host` | Bind address | 0.0.0.0 |
 | `--log-level` | Log level (debug\|info\|warn\|error) | info |
@@ -682,14 +806,29 @@ All CLI flags have corresponding environment variables with `COLA_REGISTRY_` pre
 The storage backend is configured via URI:
 
 ```bash
-# File storage (currently supported)
+# File storage
 --storage-uri file://./data/registry.json       # Relative path
 --storage-uri file:///var/data/registry.json    # Absolute path (Unix)
 --storage-uri ./data/registry.json              # Auto-prefixed with file://
 
-# OCI storage (future, not yet implemented)
---storage-uri oci://registry.example.com/repo
+# OCI storage (GitHub Container Registry)
+--storage-uri oci://ghcr.io/myorg/cola-registry-data
+--storage-token ghp_xxxxxxxxxxxxxxxxxxxx
+
+# OCI storage (Docker Hub)
+--storage-uri oci://docker.io/myuser/cola-registry-data
+--storage-token dckr_pat_xxxxxxxxx
+
+# OCI storage (Azure Container Registry)
+--storage-uri oci://myregistry.azurecr.io/cola-registry-data
+--storage-token <acr-token>
 ```
+
+**OCI Storage Notes**:
+- OCI storage requires `--storage-token` or `COLA_REGISTRY_STORAGE_TOKEN` environment variable
+- The registry data is stored as an OCI artifact with `latest` tag (overwritten on each write)
+- Supports any OCI Distribution-compliant registry
+- Token format is registry-specific (e.g., GitHub PAT for ghcr.io)
 
 ### CLI Client Environment Variables
 
@@ -727,6 +866,17 @@ The storage backend is configured via URI:
 - **Concurrent writes**: Pessimistic locking with last-write-wins semantics
 - **Invalid partition range**: Return 400 Bad Request with INVALID_PARTITION
 
+### OCI Storage Edge Cases
+
+- **OCI auth required but no token**: Server fails to start with error: "OCI storage requires authentication token via --storage-token or COLA_REGISTRY_STORAGE_TOKEN"
+- **OCI push network timeout**: Operation fails, in-memory state is rolled back, client receives 503 Storage Unavailable error
+- **OCI pull on startup with invalid token**: Server fails to start with clear error indicating authentication failure
+- **Concurrent OCI modifications**: Single-writer assumption: in-memory mutex ensures sequential writes; each write pushes a new artifact
+- **OCI repository quota exceeded**: Push fails, operation is rolled back, client receives storage error with details from OCI registry
+- **OCI artifact size exceeds limit**: Push fails, operation is rolled back, client receives error indicating size limit exceeded
+- **OCI repository does not exist**: Server creates initial empty artifact on first startup
+- **OCI artifact corrupted/invalid JSON**: Server fails to start with clear error about data corruption
+
 ### CLI Edge Cases
 
 - **Server unreachable**: Exit code 1 with error: "Failed to connect to server at <url>"
@@ -759,6 +909,15 @@ The storage backend is configured via URI:
 - **SC-C004**: Version compatibility checks prevent API mismatch errors.
 - **SC-C005**: Shell completion works in bash, zsh, and fish for all commands and flags.
 
+### OCI Storage Success Criteria
+
+- **SC-O001**: Operators can start the server with OCI storage using only `--storage-uri oci://<registry>/<repo>` and `--storage-token` (no additional configuration required).
+- **SC-O002**: All CRUD operations (registry, package, version) work identically with OCI storage as with file storage from the client's perspective.
+- **SC-O003**: Server can be restarted and all previously stored data is available from the OCI repository.
+- **SC-O004**: Push operations complete within 60 seconds for registry data up to 10MB under normal network conditions.
+- **SC-O005**: Error messages clearly indicate whether failures are due to authentication, network, or storage issues.
+- **SC-O006**: Storage backend code is structured to allow adding S3 support with minimal duplication.
+
 ---
 
 ## Assumptions
@@ -774,6 +933,16 @@ The storage backend is configured via URI:
 - Server configuration follows 12-factor app principles: no configuration file support, only CLI flags and environment variables.
 - Storage paths without a URI scheme (e.g., `./data/registry.json`) are treated as file paths and automatically get `file://` prepended.
 - Relative file paths are resolved relative to the current working directory where the server is started.
+
+### OCI Storage Assumptions
+
+- Only one server instance writes to the OCI registry at a time (single-writer assumption); multi-writer scenarios are out of scope.
+- The OCI registry implements the OCI Distribution specification (most major registries do).
+- Storage token format and authentication mechanism are registry-specific; the token is passed as-is to the OCI client library.
+- Network connectivity between server and OCI registry is generally reliable; transient failures result in operation failures (no automatic retry).
+- Registry data size will remain under 100MB (consistent with file storage limits).
+- The OCI artifact uses a simple single-blob layout rather than multi-layer images.
+- Pull operations on startup can tolerate higher latency (up to 30 seconds) compared to push operations during runtime.
 
 ---
 

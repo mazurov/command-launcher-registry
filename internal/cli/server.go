@@ -84,21 +84,14 @@ func runServer(cmd *cobra.Command, args []string) error {
 		os.Exit(ExitCodeInvalidConfig)
 	}
 
-	// Initialize storage based on scheme
-	var store storage.Store
-	switch storageURI.Scheme {
-	case "file":
-		store, err = storage.NewFileStorage(storageURI.Path, cfg.Storage.Token, logger)
-		if err != nil {
-			logger.Error("Failed to initialize storage",
-				"error", err,
-				"storage_uri", cfg.Storage.URI)
-			os.Exit(ExitCodeStorageInitFailed)
-		}
-	default:
-		logger.Error("Unsupported storage scheme",
+	// Initialize storage using factory
+	store, err := storage.NewStorage(storageURI, cfg.Storage.Token, logger)
+	if err != nil {
+		logger.Error("Failed to initialize storage",
+			"error", err,
+			"storage_uri", cfg.Storage.URI,
 			"scheme", storageURI.Scheme)
-		os.Exit(ExitCodeInvalidConfig)
+		os.Exit(ExitCodeStorageInitFailed)
 	}
 
 	// Initialize authenticator

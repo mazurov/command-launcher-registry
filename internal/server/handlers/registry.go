@@ -28,6 +28,12 @@ func NewRegistryHandler(store storage.Store, logger *slog.Logger) *RegistryHandl
 
 // CreateRegistry handles POST /api/v1/registry
 func (h *RegistryHandler) CreateRegistry(w http.ResponseWriter, r *http.Request) {
+	h.logger.Info("CreateRegistry handler called",
+		"method", r.Method,
+		"content_type", r.Header.Get("Content-Type"),
+		"content_length", r.ContentLength,
+		"remote_addr", r.RemoteAddr)
+
 	var registry models.Registry
 
 	// Parse request body

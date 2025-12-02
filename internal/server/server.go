@@ -77,9 +77,9 @@ func (s *Server) Start() error {
 	s.httpServer = &http.Server{
 		Addr:         addr,
 		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second, // Must be longer than OCI push timeout (60s)
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Log server start

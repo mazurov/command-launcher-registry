@@ -7,10 +7,10 @@ import (
 )
 
 // SupportedSchemes lists all currently supported storage URI schemes
-var SupportedSchemes = []string{"file"}
+var SupportedSchemes = []string{"file", "oci"}
 
 // PlannedSchemes lists schemes that are recognized but not yet implemented
-var PlannedSchemes = []string{"oci"}
+var PlannedSchemes = []string{}
 
 // StorageURI represents a parsed storage backend URI
 type StorageURI struct {
@@ -54,6 +54,34 @@ func ParseStorageURI(uri string) (*StorageURI, error) {
 	// Check if scheme is supported
 	if err := validateScheme(parsed.Scheme); err != nil {
 		return nil, err
+	}
+
+	// OCI-specific validation: reject query params and fragments (FR-015)
+	if parsed.Scheme == "oci" {
+		if parsed.RawQuery != "" {
+			return nil, fmt.Errorf("OCI URI does not support query parameters")
+		}
+		if parsed.Fragment != "" {
+			return nil, fmt.Errorf("OCI URI does not support fragments")
+		}
+		if parsed.Host == "" {
+			return nil, fmt.Errorf("OCI URI must include registry host: oci://<registry>/<repository>")
+		}
+		// Remove leading slash from path for OCI
+		ociPath := strings.TrimPrefix(parsed.Path, "/")
+		if ociPath == "" {
+			return nil, fmt.Errorf("OCI URI must include repository path: oci://<registry>/<repository>")
+		}
+		// Strip any tag from path (we always use :latest)
+		if idx := strings.LastIndex(ociPath, ":"); idx > 0 {
+			ociPath = ociPath[:idx]
+		}
+		return &StorageURI{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Host,
+			Path:   ociPath,
+			Raw:    uri,
+		}, nil
 	}
 
 	// Extract path - for file:// URIs, the path may be in different places
@@ -113,6 +141,17 @@ func validateScheme(scheme string) error {
 // IsFileScheme returns true if this is a file:// URI
 func (u *StorageURI) IsFileScheme() bool {
 	return u.Scheme == "file"
+}
+
+// IsOCIScheme returns true if this is an oci:// URI
+func (u *StorageURI) IsOCIScheme() bool {
+	return u.Scheme == "oci"
+}
+
+// OCIReference returns the OCI reference string "registry/repository:latest"
+// This should only be called for OCI scheme URIs
+func (u *StorageURI) OCIReference() string {
+	return fmt.Sprintf("%s/%s:latest", u.Host, u.Path)
 }
 
 // String returns the original URI string
