@@ -63,6 +63,17 @@ make build-cli   # Build CLI client
 export COLA_REGISTRY_STORAGE_URI=file://./data/registry.json
 export COLA_REGISTRY_SERVER_PORT=8080
 ./bin/cola-registry server
+
+# With OCI storage (GitHub Container Registry)
+./bin/cola-registry server \
+  --storage-uri oci://ghcr.io/yourusername/cola-registry-data \
+  --storage-token ghp_your_github_token \
+  --port 8080
+
+# Or with environment variables for OCI
+export COLA_REGISTRY_STORAGE_URI=oci://ghcr.io/yourusername/cola-registry-data
+export COLA_REGISTRY_STORAGE_TOKEN=ghp_your_github_token
+./bin/cola-registry server
 ```
 
 Server starts at `http://localhost:8080` by default.
