@@ -1,0 +1,7 @@
+# User authentication configuration for basic auth mode
+# Password hashes generated with: cola-registry auth hash-password
+
+users:
+  - username: admin
+    password: "$2a$10$nwAWLAHVQ168uEZLZALHxe6JKo3p8t7RJYsVNjNn97ugSI.xkXJSO"  # Example bcrypt hash - replace with real hash
+    # Generate with: ./bin/cola-registry auth hash-password

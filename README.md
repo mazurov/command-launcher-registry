@@ -278,7 +278,6 @@ users:
     roles: ["admin"]
 EOF
 
-# Update config.yaml or use environment variable
 export COLA_REGISTRY_AUTH_TYPE=basic
 export COLA_REGISTRY_AUTH_USERS_FILE=./users.yaml
 
