@@ -1,8 +1,8 @@
 # COLA Registry Complete Specification
 
-**Version**: 1.2.0
+**Version**: 1.3.0
 **Created**: 2025-11-29
-**Updated**: 2025-12-02
+**Updated**: 2025-12-18
 **Status**: Draft
 
 ## Overview
@@ -282,6 +282,80 @@ As an operator, I want to use different OCI registries (GitHub Container Registr
 
 3. **Given** a server configured with `oci://myregistry.azurecr.io/repo`, **When** the server performs storage operations, **Then** it uses Azure Container Registry authentication and APIs.
 
+### S3 Storage Backend Scenarios
+
+#### Scenario 16: Configure S3 Storage via URI (Priority: P1)
+
+As an operator, I want to configure the cola-registry server to store its data in an S3-compatible storage (like AWS S3 or MinIO) using a URI like `s3://s3.us-east-1.amazonaws.com/mybucket/registry.json`, so that I can leverage existing S3 infrastructure for durable storage without managing local file systems.
+
+**Success Criteria**:
+- Server starts successfully with S3 storage URI and token
+- Server connects to S3 and can perform basic operations
+- Clear error messages when configuration is invalid
+
+**Acceptance Scenarios**:
+
+1. **Given** a server with no configuration, **When** the operator provides `--storage-uri s3://s3.us-east-1.amazonaws.com/mybucket/registry.json` and `--storage-token ACCESS_KEY:SECRET_KEY`, **Then** the server starts and connects to S3.
+
+2. **Given** a server configured with S3 storage URI but no token and no AWS environment variables, **When** the server starts, **Then** it attempts IAM role authentication or fails with a clear error message.
+
+3. **Given** a server configured with S3 storage, **When** the S3 endpoint is unreachable, **Then** the server fails to start with a clear error message indicating the connection failure.
+
+4. **Given** a server configured with S3 storage pointing to an object that doesn't exist yet, **When** the server starts, **Then** it creates an initial empty registry JSON object.
+
+#### Scenario 17: Persist Registry Data to S3 (Priority: P1)
+
+As an operator, I want every write operation (create/update/delete registry, package, or version) to persist the complete registry JSON to S3, so that my data is durably stored and can survive server restarts or migrations.
+
+**Success Criteria**:
+- All write operations result in a new object uploaded to S3
+- Failed uploads cause operation rollback and error response
+- Server can restart and resume with S3-stored data
+
+**Acceptance Scenarios**:
+
+1. **Given** a server running with S3 storage, **When** a registry is created via REST API, **Then** the updated registry data is uploaded to S3.
+
+2. **Given** a server running with S3 storage, **When** a package version is created, **Then** the updated registry data is uploaded to S3.
+
+3. **Given** a server running with S3 storage, **When** an upload to S3 fails (network error, auth expired), **Then** the operation fails, the in-memory state is rolled back, and a storage error is returned to the client.
+
+4. **Given** a server running with S3 storage, **When** the server restarts, **Then** it loads the latest registry data from S3 and resumes normal operation.
+
+#### Scenario 18: Load Registry Data from S3 on Startup (Priority: P2)
+
+As an operator, I want the server to load existing registry data from S3 when it starts, so that I can restart or replace servers without losing data.
+
+**Success Criteria**:
+- New server instance loads existing data from S3
+- Empty/missing objects initialize with empty registry data
+- Corrupted data causes clear error message
+
+**Acceptance Scenarios**:
+
+1. **Given** an S3 bucket with existing registry JSON data, **When** a new server instance starts with that S3 URI, **Then** the server loads the existing data and serves it correctly.
+
+2. **Given** an S3 bucket with no registry data (object does not exist), **When** the server starts, **Then** the server initializes with empty registry data and creates an initial object.
+
+3. **Given** an S3 bucket with corrupted or invalid JSON data, **When** the server starts, **Then** the server fails with a clear error message about data corruption.
+
+#### Scenario 19: Support Multiple S3-Compatible Providers (Priority: P3)
+
+As an operator, I want to use different S3-compatible storage providers (AWS S3, MinIO, DigitalOcean Spaces, Backblaze B2, etc.) with the same URI scheme, so that I can choose the provider that fits my infrastructure.
+
+**Success Criteria**:
+- Server works with any S3-compatible storage
+- Authentication works with provider-specific credentials
+- Same URI scheme for all providers
+
+**Acceptance Scenarios**:
+
+1. **Given** a server configured with `s3://s3.us-east-1.amazonaws.com/bucket/path`, **When** the server performs storage operations, **Then** it uses AWS S3 authentication and APIs.
+
+2. **Given** a server configured with `s3+http://localhost:9000/bucket/path`, **When** the server performs storage operations, **Then** it uses MinIO with HTTP (non-TLS) connections.
+
+3. **Given** a server configured with `s3://nyc3.digitaloceanspaces.com/bucket/path`, **When** the server performs storage operations, **Then** it uses DigitalOcean Spaces authentication and APIs.
+
 ---
 
 ## Functional Requirements
@@ -459,6 +533,50 @@ As an operator, I want to use different OCI registries (GitHub Container Registr
 - **FR-S063**: System MUST gracefully handle registries that don't support artifact annotations (annotations are optional metadata).
 
 - **FR-S064**: System MUST use the existing storage factory pattern to instantiate OCI storage when `oci://` scheme is detected.
+
+#### S3 Storage Backend
+
+- **FR-S065**: System MUST support the `s3://` and `s3+http://` URI schemes for S3 storage configuration.
+
+- **FR-S066**: System MUST parse S3 URIs to extract: endpoint host, bucket name, object key path, and optional region query parameter.
+
+- **FR-S067**: System MUST support token format `ACCESS_KEY:SECRET_KEY` for S3 authentication.
+
+- **FR-S068**: System MUST fall back to `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables if no token is provided.
+
+- **FR-S069**: System MUST support IAM role authentication when no explicit credentials are provided (for AWS deployments).
+
+- **FR-S070**: System MUST upload the complete registry JSON to S3 after every write operation, overwriting the existing object.
+
+- **FR-S071**: System MUST download the latest registry data from S3 on server startup.
+
+- **FR-S072**: System MUST create an initial empty registry JSON object if the S3 object does not exist.
+
+- **FR-S073**: System MUST roll back in-memory state if S3 upload fails.
+
+- **FR-S074**: System MUST use `application/json` as the content type for the registry JSON object.
+
+- **FR-S075**: System MUST support common S3-compatible providers: AWS S3, MinIO, DigitalOcean Spaces, Backblaze B2.
+
+- **FR-S076**: System MUST reuse common storage logic between file, OCI, and S3 backends (in-memory data model, CRUD operations, validation).
+
+- **FR-S077**: System MUST use pessimistic locking (mutex) to ensure single-writer semantics for concurrent requests.
+
+- **FR-S078**: System MUST log S3 operations (upload, download) with timing and size information.
+
+- **FR-S079**: System MUST provide clear error messages distinguishing between authentication, network, and storage errors.
+
+- **FR-S080**: System MUST reject S3 URIs with fragments or unsupported query parameters with a clear validation error.
+
+- **FR-S081**: System MUST enforce timeout limits: 60 seconds for upload operations, 30 seconds for download operations.
+
+- **FR-S082**: System MUST validate that the S3 bucket exists and is accessible on startup.
+
+- **FR-S083**: System MUST use `s3://` for HTTPS connections and `s3+http://` for HTTP connections (useful for local MinIO).
+
+- **FR-S084**: System MUST auto-detect AWS region from endpoint URLs like `s3.REGION.amazonaws.com` or `s3-REGION.amazonaws.com`.
+
+- **FR-S085**: System MUST use the existing storage factory pattern to instantiate S3 storage when `s3://` or `s3+http://` scheme is detected.
 
 ### CLI Client Requirements
 
@@ -766,6 +884,9 @@ token: "user:password"  # Linux only; macOS/Windows store in OS keychain
 | STORAGE_UNAVAILABLE | 503 | Storage backend unavailable |
 | OCI_AUTH_ERROR | 503 | OCI registry authentication failed |
 | OCI_CONNECTION_ERROR | 503 | OCI registry connection failed |
+| S3_AUTH_ERROR | 503 | S3 storage authentication failed |
+| S3_CONNECTION_ERROR | 503 | S3 storage connection failed |
+| S3_STORAGE_ERROR | 503 | S3 storage operation failed |
 | UNAUTHORIZED | 401 | Authentication required/failed |
 
 ---
@@ -778,8 +899,8 @@ Configuration follows [12-factor app](https://12factor.net/) principles. No conf
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--storage-uri` | Storage URI (`file://` for local, `oci://` for OCI registry) | `file://./data/registry.json` |
-| `--storage-token` | Storage authentication token (required for OCI storage) | (empty) |
+| `--storage-uri` | Storage URI (`file://` for local, `oci://` for OCI registry, `s3://` for S3) | `file://./data/registry.json` |
+| `--storage-token` | Storage authentication token (required for OCI, optional for S3) | (empty) |
 | `--port` | Server port | 8080 |
 | `--host` | Bind address | 0.0.0.0 |
 | `--log-level` | Log level (debug\|info\|warn\|error) | info |
@@ -830,6 +951,36 @@ The storage backend is configured via URI:
 - Supports any OCI Distribution-compliant registry
 - Token format is registry-specific (e.g., GitHub PAT for ghcr.io)
 
+```bash
+# S3 storage (AWS S3)
+--storage-uri s3://s3.us-east-1.amazonaws.com/mybucket/registry.json
+--storage-token ACCESS_KEY:SECRET_KEY
+
+# S3 storage with explicit region
+--storage-uri s3://s3.amazonaws.com/mybucket/registry.json?region=us-east-1
+--storage-token ACCESS_KEY:SECRET_KEY
+
+# S3 storage (MinIO - local development)
+--storage-uri s3+http://localhost:9000/mybucket/registry.json
+--storage-token minioadmin:minioadmin
+
+# S3 storage (DigitalOcean Spaces)
+--storage-uri s3://nyc3.digitaloceanspaces.com/mybucket/registry.json
+--storage-token ACCESS_KEY:SECRET_KEY
+
+# S3 storage (Backblaze B2)
+--storage-uri s3://s3.us-west-004.backblazeb2.com/mybucket/registry.json
+--storage-token ACCESS_KEY:SECRET_KEY
+```
+
+**S3 Storage Notes**:
+- S3 storage uses `s3://` for HTTPS or `s3+http://` for HTTP connections
+- Token format: `ACCESS_KEY:SECRET_KEY`
+- Falls back to `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` environment variables if no token provided
+- Supports IAM role authentication (leave token empty)
+- Region is auto-detected from AWS endpoints or can be specified via `?region=` query parameter
+- Compatible with any S3-compatible storage: AWS S3, MinIO, DigitalOcean Spaces, Backblaze B2, Wasabi, etc.
+
 ### CLI Client Environment Variables
 
 | Variable | Description |
@@ -877,6 +1028,19 @@ The storage backend is configured via URI:
 - **OCI repository does not exist**: Server creates initial empty artifact on first startup
 - **OCI artifact corrupted/invalid JSON**: Server fails to start with clear error about data corruption
 
+### S3 Storage Edge Cases
+
+- **S3 credentials invalid**: Server fails to start with clear error indicating authentication failure (categorized as auth error)
+- **S3 bucket does not exist**: Server fails to start with error: "S3 bucket validation failed: bucket does not exist"
+- **S3 upload network timeout**: Operation fails, in-memory state is rolled back, client receives 503 Storage Unavailable error
+- **S3 download on startup with invalid credentials**: Server fails to start with clear error indicating authentication failure
+- **Concurrent S3 modifications**: Single-writer assumption: in-memory mutex ensures sequential writes; each write uploads a new object
+- **S3 object does not exist**: Server creates initial empty JSON object on first startup
+- **S3 object corrupted/invalid JSON**: Server fails to start with clear error about data corruption
+- **S3 URI with fragment**: Server fails validation with error: "S3 URI does not support fragments"
+- **S3 URI with unknown query parameter**: Server fails validation with error: "S3 URI does not support query parameter: [param]"
+- **S3 token format invalid**: Server fails to start with error indicating expected format "ACCESS_KEY:SECRET_KEY"
+
 ### CLI Edge Cases
 
 - **Server unreachable**: Exit code 1 with error: "Failed to connect to server at <url>"
@@ -918,6 +1082,16 @@ The storage backend is configured via URI:
 - **SC-O005**: Error messages clearly indicate whether failures are due to authentication, network, or storage issues.
 - **SC-O006**: Storage backend code is structured to allow adding S3 support with minimal duplication.
 
+### S3 Storage Success Criteria
+
+- **SC-S3-001**: Operators can start the server with S3 storage using `--storage-uri s3://<endpoint>/<bucket>/<path>` and `--storage-token ACCESS_KEY:SECRET_KEY`.
+- **SC-S3-002**: All CRUD operations (registry, package, version) work identically with S3 storage as with file storage from the client's perspective.
+- **SC-S3-003**: Server can be restarted and all previously stored data is available from S3.
+- **SC-S3-004**: Upload operations complete within 60 seconds for registry data up to 10MB under normal network conditions.
+- **SC-S3-005**: Error messages clearly indicate whether failures are due to authentication, network, or storage issues.
+- **SC-S3-006**: Server works with AWS S3, MinIO, DigitalOcean Spaces, and other S3-compatible providers without code changes.
+- **SC-S3-007**: Operators can use `s3+http://` scheme for non-TLS connections to local MinIO instances.
+
 ---
 
 ## Assumptions
@@ -943,6 +1117,16 @@ The storage backend is configured via URI:
 - Registry data size will remain under 100MB (consistent with file storage limits).
 - The OCI artifact uses a simple single-blob layout rather than multi-layer images.
 - Pull operations on startup can tolerate higher latency (up to 30 seconds) compared to push operations during runtime.
+
+### S3 Storage Assumptions
+
+- Only one server instance writes to the S3 bucket at a time (single-writer assumption); multi-writer scenarios are out of scope.
+- The S3 provider implements the S3 API (AWS S3, MinIO, DigitalOcean Spaces, Backblaze B2, etc.).
+- Token format is `ACCESS_KEY:SECRET_KEY` for explicit credentials, or credentials can be provided via AWS environment variables or IAM roles.
+- Network connectivity between server and S3 is generally reliable; transient failures result in operation failures (no automatic retry).
+- Registry data size will remain under 100MB (consistent with file storage limits).
+- The S3 bucket must already exist; the server does not create buckets automatically.
+- Download operations on startup can tolerate higher latency (up to 30 seconds) compared to upload operations during runtime.
 
 ---
 

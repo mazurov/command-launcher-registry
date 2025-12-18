@@ -221,11 +221,6 @@ func TestParseStorageURI_UnknownScheme(t *testing.T) {
 		scheme string
 	}{
 		{
-			name:   "s3 scheme",
-			input:  "s3://bucket/path",
-			scheme: "s3",
-		},
-		{
 			name:   "http scheme",
 			input:  "http://example.com/path",
 			scheme: "http",
@@ -312,4 +307,129 @@ func TestStorageURI_String(t *testing.T) {
 	uri, err := ParseStorageURI(input)
 	require.NoError(t, err)
 	assert.Equal(t, input, uri.String())
+}
+
+// S3 URI Tests (T1.3)
+
+func TestParseStorageURI_ValidS3URIs(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedScheme string
+		expectedHost   string
+		expectedBucket string
+		expectedKey    string
+		expectedRegion string
+		expectedSSL    bool
+	}{
+		{
+			name:           "AWS S3 with endpoint",
+			input:          "s3://s3.amazonaws.com/my-bucket/path/to/registry.json",
+			expectedScheme: "s3",
+			expectedHost:   "s3.amazonaws.com",
+			expectedBucket: "my-bucket",
+			expectedKey:    "path/to/registry.json",
+			expectedRegion: "",
+			expectedSSL:    true,
+		},
+		{
+			name:           "AWS S3 with region in query",
+			input:          "s3://s3.amazonaws.com/my-bucket/registry.json?region=us-east-1",
+			expectedScheme: "s3",
+			expectedHost:   "s3.amazonaws.com",
+			expectedBucket: "my-bucket",
+			expectedKey:    "registry.json",
+			expectedRegion: "us-east-1",
+			expectedSSL:    true,
+		},
+		{
+			name:           "MinIO HTTP scheme",
+			input:          "s3+http://localhost:9000/cola-bucket/registry.json",
+			expectedScheme: "s3+http",
+			expectedHost:   "localhost:9000",
+			expectedBucket: "cola-bucket",
+			expectedKey:    "registry.json",
+			expectedRegion: "",
+			expectedSSL:    false,
+		},
+		{
+			name:           "DigitalOcean Spaces",
+			input:          "s3://nyc3.digitaloceanspaces.com/my-space/cola/registry.json",
+			expectedScheme: "s3",
+			expectedHost:   "nyc3.digitaloceanspaces.com",
+			expectedBucket: "my-space",
+			expectedKey:    "cola/registry.json",
+			expectedRegion: "",
+			expectedSSL:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uri, err := ParseStorageURI(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedScheme, uri.Scheme)
+			assert.Equal(t, tt.expectedHost, uri.Host)
+			assert.True(t, uri.IsS3Scheme())
+			assert.Equal(t, tt.expectedBucket, uri.S3Bucket())
+			assert.Equal(t, tt.expectedKey, uri.S3Key())
+			assert.Equal(t, tt.expectedRegion, uri.S3Region())
+			assert.Equal(t, tt.expectedSSL, uri.S3UseSSL())
+		})
+	}
+}
+
+func TestParseStorageURI_InvalidS3URIs(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		errContains string
+	}{
+		{
+			name:        "no host",
+			input:       "s3:///bucket/path",
+			errContains: "S3 URI must include endpoint host",
+		},
+		{
+			name:        "no path",
+			input:       "s3://s3.amazonaws.com",
+			errContains: "S3 URI must include bucket and path",
+		},
+		{
+			name:        "only bucket, no key",
+			input:       "s3://s3.amazonaws.com/bucket",
+			errContains: "S3 URI must include object key path",
+		},
+		{
+			name:        "with fragment",
+			input:       "s3://s3.amazonaws.com/bucket/path#section",
+			errContains: "S3 URI does not support fragments",
+		},
+		{
+			name:        "unknown query param",
+			input:       "s3://s3.amazonaws.com/bucket/path?foo=bar",
+			errContains: "S3 URI does not support query parameter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseStorageURI(tt.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errContains)
+		})
+	}
+}
+
+func TestStorageURI_IsS3Scheme(t *testing.T) {
+	s3URI, err := ParseStorageURI("s3://s3.amazonaws.com/bucket/registry.json")
+	require.NoError(t, err)
+	assert.True(t, s3URI.IsS3Scheme())
+	assert.False(t, s3URI.IsFileScheme())
+	assert.False(t, s3URI.IsOCIScheme())
+
+	s3HttpURI, err := ParseStorageURI("s3+http://localhost:9000/bucket/registry.json")
+	require.NoError(t, err)
+	assert.True(t, s3HttpURI.IsS3Scheme())
+	assert.False(t, s3HttpURI.S3UseSSL())
 }

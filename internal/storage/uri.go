@@ -7,17 +7,18 @@ import (
 )
 
 // SupportedSchemes lists all currently supported storage URI schemes
-var SupportedSchemes = []string{"file", "oci"}
+var SupportedSchemes = []string{"file", "oci", "s3", "s3+http"}
 
 // PlannedSchemes lists schemes that are recognized but not yet implemented
 var PlannedSchemes = []string{}
 
 // StorageURI represents a parsed storage backend URI
 type StorageURI struct {
-	Scheme string // Storage backend type (e.g., "file", "oci")
+	Scheme string // Storage backend type (e.g., "file", "oci", "s3", "s3+http")
 	Host   string // Host for network backends (optional for file://)
 	Path   string // Path to storage resource
 	Raw    string // Original URI string for logging/debugging
+	Query  url.Values // Query parameters (for S3 region)
 }
 
 // NormalizeStorageURI ensures the URI has a scheme, prepending "file://" if missing
@@ -81,6 +82,39 @@ func ParseStorageURI(uri string) (*StorageURI, error) {
 			Host:   parsed.Host,
 			Path:   ociPath,
 			Raw:    uri,
+		}, nil
+	}
+
+	// S3-specific validation
+	if parsed.Scheme == "s3" || parsed.Scheme == "s3+http" {
+		if parsed.Fragment != "" {
+			return nil, fmt.Errorf("S3 URI does not support fragments")
+		}
+		if parsed.Host == "" {
+			return nil, fmt.Errorf("S3 URI must include endpoint host: s3://endpoint/bucket/path")
+		}
+		// Validate query parameters - only 'region' is allowed
+		for key := range parsed.Query() {
+			if key != "region" {
+				return nil, fmt.Errorf("S3 URI does not support query parameter %q; only 'region' is allowed", key)
+			}
+		}
+		// Remove leading slash from path
+		s3Path := strings.TrimPrefix(parsed.Path, "/")
+		if s3Path == "" {
+			return nil, fmt.Errorf("S3 URI must include bucket and path: s3://endpoint/bucket/path")
+		}
+		// Validate bucket/path structure (need at least bucket/key)
+		parts := strings.SplitN(s3Path, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			return nil, fmt.Errorf("S3 URI must include object key path: s3://endpoint/bucket/path/to/object.json")
+		}
+		return &StorageURI{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Host,
+			Path:   s3Path,
+			Raw:    uri,
+			Query:  parsed.Query(),
 		}, nil
 	}
 
@@ -157,4 +191,50 @@ func (u *StorageURI) OCIReference() string {
 // String returns the original URI string
 func (u *StorageURI) String() string {
 	return u.Raw
+}
+
+// IsS3Scheme returns true if this is an s3:// or s3+http:// URI
+func (u *StorageURI) IsS3Scheme() bool {
+	return u.Scheme == "s3" || u.Scheme == "s3+http"
+}
+
+// S3Endpoint returns the S3 endpoint host (e.g., "s3.amazonaws.com", "minio.example.com:9000")
+// This should only be called for S3 scheme URIs
+func (u *StorageURI) S3Endpoint() string {
+	return u.Host
+}
+
+// S3Bucket returns the S3 bucket name (first path segment)
+// This should only be called for S3 scheme URIs
+func (u *StorageURI) S3Bucket() string {
+	parts := strings.SplitN(u.Path, "/", 2)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
+}
+
+// S3Key returns the S3 object key (path after bucket)
+// This should only be called for S3 scheme URIs
+func (u *StorageURI) S3Key() string {
+	parts := strings.SplitN(u.Path, "/", 2)
+	if len(parts) > 1 {
+		return parts[1]
+	}
+	return ""
+}
+
+// S3Region returns the region from query parameter, or empty if not specified
+// This should only be called for S3 scheme URIs
+func (u *StorageURI) S3Region() string {
+	if u.Query != nil {
+		return u.Query.Get("region")
+	}
+	return ""
+}
+
+// S3UseSSL returns true for s3:// (HTTPS), false for s3+http:// (HTTP)
+// This should only be called for S3 scheme URIs
+func (u *StorageURI) S3UseSSL() bool {
+	return u.Scheme == "s3"
 }

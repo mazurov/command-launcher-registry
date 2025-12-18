@@ -60,9 +60,14 @@ func TestValidate_StorageURI(t *testing.T) {
 		},
 		{
 			name:      "unsupported scheme",
-			uri:       "s3://bucket/path",
+			uri:       "ftp://host/path",
 			wantError: true,
 			errMsg:    "unsupported storage scheme",
+		},
+		{
+			name:      "valid s3 scheme",
+			uri:       "s3://s3.amazonaws.com/bucket/registry.json",
+			wantError: false,
 		},
 		{
 			name:      "valid oci scheme",

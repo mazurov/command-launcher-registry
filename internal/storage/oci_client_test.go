@@ -42,7 +42,7 @@ func TestNewOCIClient_InvalidReference(t *testing.T) {
 
 func TestOCIClient_TimeoutConstants(t *testing.T) {
 	// Verify timeout constants per FR-016
-	assert.Equal(t, 5*time.Second, OCIPushTimeout, "Push timeout should be 5 seconds")
+	assert.Equal(t, 60*time.Second, OCIPushTimeout, "Push timeout should be 60 seconds")
 	assert.Equal(t, 30*time.Second, OCIPullTimeout, "Pull timeout should be 30 seconds")
 }
 

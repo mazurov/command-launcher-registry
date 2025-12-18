@@ -83,9 +83,9 @@ func TestFactory_NewStorage_UnsupportedScheme(t *testing.T) {
 
 	// Manually create a URI with unsupported scheme
 	uri := &StorageURI{
-		Scheme: "s3",
-		Path:   "bucket/path",
-		Raw:    "s3://bucket/path",
+		Scheme: "ftp",
+		Path:   "host/path",
+		Raw:    "ftp://host/path",
 	}
 
 	_, err := NewStorage(uri, "", logger)

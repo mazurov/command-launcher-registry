@@ -10,7 +10,7 @@ A complete solution for hosting and managing Command Launcher remote registries,
 - **Gradual Rollout**: Partition-based version distribution (0-9 range)
 - **Command Launcher Compatible**: Serves index.json in CDT-compatible format
 - **Authentication**: Optional HTTP Basic Auth for write operations
-- **Pluggable Storage**: File-based JSON storage or OCI registry storage (ghcr.io, Docker Hub, etc.)
+- **Pluggable Storage**: File-based JSON, OCI registry (ghcr.io, Docker Hub), or S3-compatible storage (AWS S3, MinIO, etc.)
 - **Operational Ready**: Health checks, metrics, structured logging
 
 ### CLI Client (`cola-regctl`)
@@ -74,6 +74,16 @@ export COLA_REGISTRY_SERVER_PORT=8080
 export COLA_REGISTRY_STORAGE_URI=oci://ghcr.io/yourusername/cola-registry-data
 export COLA_REGISTRY_STORAGE_TOKEN=ghp_your_github_token
 ./bin/cola-registry server
+
+# With S3 storage (AWS S3)
+./bin/cola-registry server \
+  --storage-uri s3://s3.us-east-1.amazonaws.com/mybucket/registry.json \
+  --storage-token ACCESS_KEY:SECRET_KEY
+
+# With S3 storage (MinIO for local development)
+./bin/cola-registry server \
+  --storage-uri s3+http://localhost:9000/mybucket/registry.json \
+  --storage-token minioadmin:minioadmin
 ```
 
 Server starts at `http://localhost:8080` by default.
@@ -190,9 +200,9 @@ No configuration file is required.
 cola-registry server [flags]
 
 Flags:
-  --storage-uri string     Storage URI (file:// for local, oci:// for OCI registry)
+  --storage-uri string     Storage URI (file:// for local, oci:// for OCI registry, s3:// for S3)
                            Default: file://./data/registry.json
-  --storage-token string   Storage authentication token (required for OCI storage)
+  --storage-token string   Storage authentication token (required for OCI, optional for S3)
                            Default: (empty)
   --port int               Server port
                            Default: 8080
@@ -244,6 +254,26 @@ The storage backend is configured via URI:
 # OCI storage (Azure Container Registry)
 --storage-uri oci://myregistry.azurecr.io/cola-registry-data
 --storage-token <acr-token>
+
+# S3 storage (AWS S3)
+--storage-uri s3://s3.us-east-1.amazonaws.com/mybucket/registry.json
+--storage-token ACCESS_KEY:SECRET_KEY
+
+# S3 storage with explicit region
+--storage-uri s3://s3.amazonaws.com/mybucket/registry.json?region=us-east-1
+--storage-token ACCESS_KEY:SECRET_KEY
+
+# S3 storage (MinIO - local development)
+--storage-uri s3+http://localhost:9000/mybucket/registry.json
+--storage-token minioadmin:minioadmin
+
+# S3 storage (DigitalOcean Spaces)
+--storage-uri s3://nyc3.digitaloceanspaces.com/mybucket/registry.json
+--storage-token ACCESS_KEY:SECRET_KEY
+
+# S3 storage (Backblaze B2)
+--storage-uri s3://s3.us-west-004.backblazeb2.com/mybucket/registry.json
+--storage-token ACCESS_KEY:SECRET_KEY
 ```
 
 **OCI Storage Notes**:
@@ -251,6 +281,14 @@ The storage backend is configured via URI:
 - The registry data is stored as an OCI artifact with `latest` tag (overwritten on each write)
 - Supports any OCI Distribution-compliant registry
 - Token format is registry-specific (e.g., GitHub PAT for ghcr.io)
+
+**S3 Storage Notes**:
+- S3 storage uses `s3://` for HTTPS or `s3+http://` for HTTP connections
+- Token format: `ACCESS_KEY:SECRET_KEY`
+- Falls back to `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` environment variables if no token provided
+- Supports IAM role authentication (leave token empty)
+- Region is auto-detected from AWS endpoints or can be specified via `?region=` query parameter
+- Compatible with any S3-compatible storage: AWS S3, MinIO, DigitalOcean Spaces, Backblaze B2, Wasabi, etc.
 
 ### Docker Usage
 
@@ -268,6 +306,12 @@ docker run -p 8080:8080 \
 docker run -p 8080:8080 \
   -e COLA_REGISTRY_STORAGE_URI=oci://ghcr.io/myorg/cola-registry-data \
   -e COLA_REGISTRY_STORAGE_TOKEN=ghp_xxxxxxxxxxxx \
+  cola-registry
+
+# Run with S3 storage
+docker run -p 8080:8080 \
+  -e COLA_REGISTRY_STORAGE_URI=s3://s3.us-east-1.amazonaws.com/mybucket/registry.json \
+  -e COLA_REGISTRY_STORAGE_TOKEN=ACCESS_KEY:SECRET_KEY \
   cola-registry
 ```
 
@@ -575,7 +619,7 @@ internal/
 │   ├── prompts/            # Interactive prompts
 │   ├── validation/         # Client-side validation
 │   └── errors/             # Error handling and exit codes
-├── storage/                # Storage layer (file, OCI)
+├── storage/                # Storage layer (file, OCI, S3)
 ├── models/                 # Shared data models
 ├── auth/                   # Server authentication
 ├── cli/                    # Server CLI commands
